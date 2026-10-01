@@ -251,9 +251,16 @@ try {
 
   $vendor = Join-Path $prof ('vendor\' + $pkgName)
 
+  # Everything a self-contained copy needs. photo/ is included so that a copied
+  # install can still regenerate every asset from source.
+  $pluginItems = @(
+    'package.json', 'cordis.patch.yml', 'README.md', 'LICENSE', 'DESIGN.md',
+    'bundle', 'assets', 'src', 'tools', 'photo'
+  )
+
   function Copy-PluginInto($Destination) {
     New-Item -ItemType Directory -Force -Path $Destination | Out-Null
-    foreach ($item in @('package.json', 'cordis.patch.yml', 'README.md', 'LICENSE', 'DESIGN.md', 'bundle', 'assets', 'src', 'tools')) {
+    foreach ($item in $pluginItems) {
       $from = Join-Path $pluginFull $item
       if (Test-Path -LiteralPath $from) {
         Copy-Item -LiteralPath $from -Destination $Destination -Recurse -Force
@@ -266,6 +273,24 @@ try {
       Where-Object { $_.Name -eq '.git' } |
       ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
     Log ('  copied the plugin into ' + $Destination)
+  }
+
+  # Put the plugin where the profile can reference it.
+  #   - Try a junction first: it stays live, so a rebuild in the repository shows
+  #     up in DSH after a page refresh, with no reinstall.
+  #   - Fall back to a copy: self-contained snapshot, needs a reinstall to update.
+  # The choice is logged, because it changes how you update the plugin later.
+  function Provide-PluginToProfile {
+    Remove-PathQuietly $vendor
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $vendor) | Out-Null
+    $linked = New-DirectoryJunction $vendor $pluginFull
+    if ($null -ne $linked) {
+      Ok ('vendor is a live junction to the repository: ' + $vendor)
+      return @{ Spec = 'file:./vendor/' + $pkgName; Target = $vendor; Live = $true }
+    }
+    Log '  [note] cannot create a directory junction; falling back to a snapshot copy'
+    Copy-PluginInto $vendor
+    return @{ Spec = 'file:./vendor/' + $pkgName; Target = $vendor; Live = $false }
   }
 
   $relative = Get-RelativePath $profRoot $pluginFull
@@ -357,14 +382,14 @@ try {
   # Junction creation is blocked in restricted environments (and pnpm itself can
   # fail there because it shells out to git), so a failure here is not fatal:
   # the manual route below produces an equivalent local install.
+  $provided = $null
   if ($null -ne $pnpm) {
-    $pnpmSpec = 'file:./' + $(if ($insideProfile) { $relative } else { 'vendor/' + $pkgName })
-    if (-not $insideProfile) {
-      if ($ForceVendorCopy) { Log '  [warn] -ForceVendorCopy: copying the plugin into vendor' }
-      Remove-PathQuietly $vendor
-      Copy-PluginInto $vendor
+    if ($insideProfile) {
+      $pnpmExit = Invoke-PnpmAdd ('file:./' + $relative)
+    } else {
+      $provided = Provide-PluginToProfile
+      $pnpmExit = Invoke-PnpmAdd $provided.Spec
     }
-    $pnpmExit = Invoke-PnpmAdd $pnpmSpec
   } else {
     Log '  [note] pnpm not available; installing manually'
   }
@@ -382,9 +407,10 @@ try {
     if ($insideProfile) {
       Install-Manually $pluginFull ('file:./' + $relative)
     } else {
-      Remove-PathQuietly $vendor
-      Copy-PluginInto $vendor
-      Install-Manually $vendor ('file:./vendor/' + $pkgName)
+      # Provide-PluginToProfile already ran when pnpm was available; only run it
+      # here when pnpm was missing entirely, so we never copy twice.
+      if ($null -eq $provided) { $provided = Provide-PluginToProfile }
+      Install-Manually $provided.Target $provided.Spec
     }
     $installed = $true
   }
