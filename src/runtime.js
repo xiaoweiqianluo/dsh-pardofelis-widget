@@ -30,7 +30,7 @@
 // ══════════════════════════════════════════════════════════════════════════
 
 const PLUGIN_ID = 'dsh-pardofelis-widget';
-const PLUGIN_VERSION = '1.1.1';
+const PLUGIN_VERSION = '1.1.2';
 
 /** localStorage 键。插件自己的偏好，与 DSH 的设置互不干扰。 */
 const LS_KEY = 'dsh-pardofelis-widget:v1';
@@ -541,7 +541,9 @@ html[data-dsh-pardofelis="${THEME_ATTR_VALUE}"] {
   background-size: cover !important;
   background-position: center !important;
   background-repeat: no-repeat !important;
-  background-attachment: fixed !important;
+  /* 刻意不写 background-attachment: fixed。根元素背景会被提升为画布背景，
+     而 fixed 要求相对视口定位，两者语义冲突，多个引擎在这里表现不一致
+     （症状就是「color 画了、image 没画」）。文档本身不滚动，不需要它。 */
 }
 html[data-dsh-pardofelis="${THEME_ATTR_VALUE}"][data-pw-dark="on"] {
   background-color: #1E1C24 !important;
@@ -1579,6 +1581,17 @@ const isChatPage = () => COMPOSER_SELECTORS.some((selector) => document.querySel
  * 只读 computedStyle，不修改任何原样式。
  */
 function detectTheme() {
+  // 先读 DSH 自己的明暗信号。这是它的显式声明，比反推可靠，
+  // 也避免了「主题改了背景色 → 明暗判定跟着变」这种自引用。
+  try {
+    if (document.body !== null && document.body.hasAttribute('data-ds-dark-theme')) return 'dark';
+    const rootTheme = document.documentElement.getAttribute('data-ds-theme-source');
+    if (rootTheme === 'dark') return 'dark';
+    if (rootTheme === 'light') return 'light';
+  } catch {
+    /* 读不到就继续往下走 */
+  }
+
   const samples = [];
   const candidates = [document.body, document.querySelector('main'), document.querySelector('aside')];
   for (const node of candidates) {

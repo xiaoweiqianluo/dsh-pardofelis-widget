@@ -277,10 +277,17 @@ async function main() {
       // background-image 没带，被 DSH 自己的 html 规则用 background 简写抹掉：
       // 底色生效、壁纸没画上，界面看起来像"主题没生效"。
       for (const prop of ['background-color', 'background-image', 'background-size',
-        'background-position', 'background-repeat', 'background-attachment']) {
+        'background-position', 'background-repeat']) {
         const pattern = new RegExp(`${prop}:[^;]*!important`);
         check(`html 上的 ${prop} 带 !important（否则会被 DSH 的简写覆盖）`, pattern.test(theme));
       }
+      // 根元素上的 fixed 背景是已知的引擎怪区：根元素背景会被提升为画布背景，
+      // 而 fixed 要求相对视口定位，两者语义冲突，症状是「颜色画了、图没画」。
+      // 检查前必须剥掉 CSS 注释——样式表里正好有一条注释在解释「为什么不用它」，
+      // 不剥掉会被自己的说明文字误判（踩过一次）。
+      const themeCode = theme.replace(/\/\*[\s\S]*?\*\//g, '');
+      check('html 上不使用 background-attachment: fixed',
+        !/background-attachment:\s*fixed/.test(themeCode));
     }
     check('壁纸以变量注入，且两个槽位都在', /--pw-wallpaper-light/.test(runtime) && /--pw-wallpaper-dark/.test(runtime));
     check('主题样式表有稳定 id（幂等注入依赖它）', /const THEME_STYLE_ID = '/.test(runtime));
