@@ -319,11 +319,39 @@ async function main() {
       Array.from(audit.matchAll(/\(\s*\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\)\s*,\s*([0-9.]+)\s*\)/g))
         .map((match) => match[1]),
     );
-    // 两个集合应当完全相等：审计覆盖了每个面层取值，运行时也没有审计没建模的取值。
-    const runtimeList = [...runtimeAlphas].sort().join(', ');
-    const auditList = [...auditAlphas].sort().join(', ');
-    check('审计与运行时的面层取值集合一致', runtimeList === auditList,
-      `运行时 [${runtimeList}] vs 审计 [${auditList}]`);
+    // 方向是单向的：审计【用到的】每个取值都必须在运行时里真实存在，
+    // 否则审计就是在验证一个根本没上线的数字。
+    //
+    // 反过来不要求相等：运行时会有审计没建模的面层令牌（bg-overlay 之类），
+    // 那不是不一致。另外必须按【数值】比较——运行时写 rgba(...,1)，审计写 1.0，
+    // 按字符串比会假报不一致（踩过）。
+    const runtimeList = [...runtimeAlphas].map(Number).sort((a, b) => a - b);
+    const auditList = [...auditAlphas].map(Number).sort((a, b) => a - b);
+    const missing = auditList.filter((value) => !runtimeList.includes(value));
+    check('审计用到的每个面层取值在运行时样式表里都存在', missing.length === 0,
+      `审计 [${auditList.join(', ')}] 运行时 [${runtimeList.join(', ')}] 缺 [${missing.join(', ')}]`);
+  }
+
+  section('叠在内容之上的面层必须不透明');
+
+  {
+    // 回归守卫，对应一个真实 bug：把 bg-layer-* 调成 0.70 之后，设置弹层
+    // （.wCInkW_panel 用 bg-layer-2、._1Wt2eq_panel 用 bg-layer-1）变成 30% 透明，
+    // 下层页面的文字直接透上来，看起来像两个窗口的内容糊在一起。
+    //
+    // 区分标准不是"哪个令牌好看"，而是【这个表面是不是叠在别的内容之上】：
+    //   bg-base —— 页面最底层，半透明只是透出壁纸，允许；
+    //   bg-layer-* —— 卡片/面板/下拉/输入框，永远叠在内容之上，必须不透明。
+    // 谁想再把它调透，请先想清楚弹层会不会串内容。
+    const themeCss = (runtime.match(/const THEME_STYLES = `([\s\S]*?)`;/))?.[1] ?? '';
+    for (const token of ['--dsw-alias-bg-layer-1', '--dsw-alias-bg-layer-2', '--dsw-alias-bg-layer-3']) {
+      const matches = [...themeCss.matchAll(new RegExp(`(${token}):\\s*rgba\\([^)]*?([0-9.]+)\\)`, 'g'))];
+      check(`${token} 被显式设置为不透明`, matches.length >= 1, `${matches.length} 处`);
+      for (const match of matches) {
+        check(`${token} 的不透明度 ≥ 0.95（当前 ${match[2]}），否则弹层会透出下层内容`,
+          Number(match[2]) >= 0.95);
+      }
+    }
   }
 
   section('内联资源（零请求的前提）');

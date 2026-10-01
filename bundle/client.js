@@ -57,7 +57,7 @@ window.__ModuleLoader__.load({
 // ══════════════════════════════════════════════════════════════════════════
 
 const PLUGIN_ID = 'dsh-pardofelis-widget';
-const PLUGIN_VERSION = '1.2.5';
+const PLUGIN_VERSION = '1.2.6';
 
 /** localStorage 键。插件自己的偏好，与 DSH 的设置互不干扰。 */
 const LS_KEY = 'dsh-pardofelis-widget:v1';
@@ -600,6 +600,12 @@ html[data-dsh-pardofelis="${THEME_ATTR_VALUE}"][data-pw-dark="on"] {
  * 并给一部分加透明度，让下面的壁纸透出来。
  * 每个变量都带 DSH 原值作回退，取不到令牌时行为与未加主题一致。
  *
+ * ⚠ 【页面底色】和【卡片/弹层】必须分开对待：
+ *   bg-base 是最底层，半透明只是透出壁纸，正确；
+ *   bg-layer-* 是叠在别的内容【之上】的表面（面板 .wCInkW_panel、下拉、输入框、
+ *   卡片……），一旦半透明，下层内容会透上来和它串在一起——「打开设置时两个窗口
+ *   内容混在一起」就是这个原因。所以 layer 家族必须保持不透明。
+ *
  * ⚠ 不透明度必须按【层数】反推，因为半透明层叠是相乘而不是相加。
  *   DSH 在对话区实际叠了四层：body -> BynINW_frame -> BynINW_centerCol
  *   -> Dc7zOa_root，四层各 0.72 叠起来是 1-(0.28^4·0.25) ≈ 99.4% 不透明，
@@ -609,10 +615,10 @@ html[data-dsh-pardofelis="${THEME_ATTR_VALUE}"][data-pw-dark="on"] {
  */
 html[data-dsh-pardofelis="${THEME_ATTR_VALUE}"] body {
   --dsw-alias-bg-base: rgba(255, 252, 250, 0.32) !important;
-  --dsw-alias-bg-layer-1: rgba(255, 251, 248, 0.70) !important;
-  --dsw-alias-bg-layer-2: rgba(253, 246, 243, 0.70) !important;
-  --dsw-alias-bg-layer-3: rgba(251, 243, 240, 0.70) !important;
-  --dsw-alias-bg-overlay: rgba(255, 252, 250, 0.94) !important;
+  --dsw-alias-bg-layer-1: rgba(255, 251, 248, 1) !important;
+  --dsw-alias-bg-layer-2: rgba(253, 246, 243, 1) !important;
+  --dsw-alias-bg-layer-3: rgba(251, 243, 240, 1) !important;
+  --dsw-alias-bg-overlay: rgba(255, 252, 250, 0.98) !important;
   --dsw-alias-bg-mask-1: rgba(74, 58, 52, 0.06) !important;
   --dsw-alias-bg-mask-2: rgba(74, 58, 52, 0.10) !important;
   --dsw-alias-bg-mask-3: rgba(74, 58, 52, 0.16) !important;
@@ -632,10 +638,10 @@ html[data-dsh-pardofelis="${THEME_ATTR_VALUE}"] body {
 }
 html[data-dsh-pardofelis="${THEME_ATTR_VALUE}"][data-pw-dark="on"] body {
   --dsw-alias-bg-base: rgba(30, 28, 36, 0.34) !important;
-  --dsw-alias-bg-layer-1: rgba(36, 33, 42, 0.70) !important;
-  --dsw-alias-bg-layer-2: rgba(41, 38, 48, 0.70) !important;
-  --dsw-alias-bg-layer-3: rgba(46, 42, 54, 0.70) !important;
-  --dsw-alias-bg-overlay: rgba(30, 28, 36, 0.94) !important;
+  --dsw-alias-bg-layer-1: rgba(36, 33, 42, 1) !important;
+  --dsw-alias-bg-layer-2: rgba(41, 38, 48, 1) !important;
+  --dsw-alias-bg-layer-3: rgba(46, 42, 54, 1) !important;
+  --dsw-alias-bg-overlay: rgba(30, 28, 36, 0.98) !important;
   --dsw-alias-bg-mask-1: rgba(0, 0, 0, 0.18) !important;
   --dsw-alias-bg-mask-2: rgba(0, 0, 0, 0.26) !important;
   --dsw-alias-bg-mask-3: rgba(0, 0, 0, 0.34) !important;

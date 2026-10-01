@@ -207,7 +207,7 @@ BODY              rgba(255, 252, 250, 0.72)   ← --dsw-alias-bg-base
 | --- | --- | --- | --- |
 | `--dsw-alias-bg-base` | 0.32 | 对话区叠 3 次 | 0.899（含 frame） |
 | `--dsw-specific-sidebar-fill` | 0.68 | 对话区 1 次 / 侧栏 1 次 | 侧栏 0.782 |
-| `--dsw-alias-bg-layer-1..3` | 0.70 | 卡片，单层 | 0.700 |
+| `--dsw-alias-bg-layer-1..3` | **1（不透明）** | 卡片/弹层，叠在内容之上 | 1.000 |
 
 `bg-base` 给得低是因为它叠了三次；`sidebar-fill` 给得高是因为侧栏只有两层。
 **改这些数字之前请先重跑 `tools/contrast_audit.py`**，它按真实层数建模。
@@ -345,3 +345,28 @@ v1.2.2 把面层做到 0.963 之后，界面确实"实"了，但角色淡到只�
 **结论**：想让角色更明显，只有两条路——把面层调透一点，或者把角色的重心再往左
 挪进侧栏区（那里只叠两层，天然更透）。两条都可以用
 `tools/contrast_audit.py` 先算清楚再改。
+
+### 4.10 页面底色 vs 卡片弹层：必须分开对待（真实 bug）
+
+用户报过一个 bug：打开设置时"两个窗口内容混在一起"。原因在 DSH 自己的 CSS 里：
+
+```
+.wCInkW_panel    z-index:1，800px 弹层   background: --dsw-alias-bg-layer-2
+._1Wt2eq_panel   z-index:2                background: --dsw-alias-bg-layer-1
+.fO69Vq_registry z-index:1100             background: --dsw-alias-bg-layer-2
+```
+
+我把整个 `bg-layer` 家族调成 0.70，于是这些弹层 30% 透明，下层页面的文字直接透上来。
+
+**建模错在把两类表面当成了一类：**
+
+| 令牌 | 位置 | 能不能半透明 |
+| --- | --- | --- |
+| `bg-base` | 页面**最底层** | 可以——半透明只是透出壁纸 |
+| `bg-layer-*` | 永远叠在**别的内容之上**（弹层/下拉/输入框/卡片/查看器） | **不行**——下层会串上来 |
+
+所以 layer 家族恢复不透明（保留暖色调），`bg-overlay` 提到 0.98。
+只有 `bg-base` 和侧栏那层还带透明度——它们正是要透出壁纸的表面。
+
+`verify.mjs` 里加了守卫：三个 `bg-layer-*` 令牌的不透明度必须 ≥ 0.95，
+并写明了原因，防止以后又被"调透一点"。
