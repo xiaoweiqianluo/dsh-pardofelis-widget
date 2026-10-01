@@ -30,7 +30,7 @@
 // ══════════════════════════════════════════════════════════════════════════
 
 const PLUGIN_ID = 'dsh-pardofelis-widget';
-const PLUGIN_VERSION = '1.2.1';
+const PLUGIN_VERSION = '1.2.2';
 
 /** localStorage 键。插件自己的偏好，与 DSH 的设置互不干扰。 */
 const LS_KEY = 'dsh-pardofelis-widget:v1';
@@ -581,10 +581,10 @@ html[data-dsh-pardofelis="${THEME_ATTR_VALUE}"][data-pw-dark="on"] {
  *   改动这里之前请先重跑 tools/contrast_audit.py。
  */
 html[data-dsh-pardofelis="${THEME_ATTR_VALUE}"] body {
-  --dsw-alias-bg-base: rgba(255, 252, 250, 0.32) !important;
-  --dsw-alias-bg-layer-1: rgba(255, 251, 248, 0.70) !important;
-  --dsw-alias-bg-layer-2: rgba(253, 246, 243, 0.70) !important;
-  --dsw-alias-bg-layer-3: rgba(251, 243, 240, 0.70) !important;
+  --dsw-alias-bg-base: rgba(255, 252, 250, 0.45) !important;
+  --dsw-alias-bg-layer-1: rgba(255, 251, 248, 0.85) !important;
+  --dsw-alias-bg-layer-2: rgba(253, 246, 243, 0.85) !important;
+  --dsw-alias-bg-layer-3: rgba(251, 243, 240, 0.85) !important;
   --dsw-alias-bg-overlay: rgba(255, 252, 250, 0.94) !important;
   --dsw-alias-bg-mask-1: rgba(74, 58, 52, 0.06) !important;
   --dsw-alias-bg-mask-2: rgba(74, 58, 52, 0.10) !important;
@@ -601,13 +601,13 @@ html[data-dsh-pardofelis="${THEME_ATTR_VALUE}"] body {
   --dsw-alias-scrollbar-hover-l2: rgba(152, 132, 121, 0.44) !important;
   /* 侧栏的底。DSH 用 --dsw-specific-* 命名，就是留给主题覆盖的语义槽位；
      不覆盖它侧栏会是一块不透明的 #f9fafb，把左侧的角色整个挡掉。 */
-  --dsw-specific-sidebar-fill: rgba(250, 248, 246, 0.68) !important;
+  --dsw-specific-sidebar-fill: rgba(250, 248, 246, 0.78) !important;
 }
 html[data-dsh-pardofelis="${THEME_ATTR_VALUE}"][data-pw-dark="on"] body {
-  --dsw-alias-bg-base: rgba(30, 28, 36, 0.34) !important;
-  --dsw-alias-bg-layer-1: rgba(36, 33, 42, 0.70) !important;
-  --dsw-alias-bg-layer-2: rgba(41, 38, 48, 0.70) !important;
-  --dsw-alias-bg-layer-3: rgba(46, 42, 54, 0.70) !important;
+  --dsw-alias-bg-base: rgba(30, 28, 36, 0.47) !important;
+  --dsw-alias-bg-layer-1: rgba(36, 33, 42, 0.85) !important;
+  --dsw-alias-bg-layer-2: rgba(41, 38, 48, 0.85) !important;
+  --dsw-alias-bg-layer-3: rgba(46, 42, 54, 0.85) !important;
   --dsw-alias-bg-overlay: rgba(30, 28, 36, 0.94) !important;
   --dsw-alias-bg-mask-1: rgba(0, 0, 0, 0.18) !important;
   --dsw-alias-bg-mask-2: rgba(0, 0, 0, 0.26) !important;
@@ -622,7 +622,7 @@ html[data-dsh-pardofelis="${THEME_ATTR_VALUE}"][data-pw-dark="on"] body {
   --dsw-alias-scrollbar-hover-l1: rgba(212, 178, 166, 0.36) !important;
   --dsw-alias-scrollbar-bg-l2: rgba(212, 178, 166, 0.26) !important;
   --dsw-alias-scrollbar-hover-l2: rgba(212, 178, 166, 0.44) !important;
-  --dsw-specific-sidebar-fill: rgba(32, 30, 38, 0.68) !important;
+  --dsw-specific-sidebar-fill: rgba(32, 30, 38, 0.78) !important;
 }
 `;
 

@@ -21,6 +21,8 @@ tmp/
 .scratch/
 tools/.syntax/
 tools/_*
+msg-*.txt
+commitmsg*.txt
 
 # Python
 __pycache__/
