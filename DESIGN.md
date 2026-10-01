@@ -218,8 +218,8 @@ BODY              rgba(255, 252, 250, 0.72)   ← --dsw-alias-bg-base
 | --- | --- | --- |
 | `FIGURE_CENTER_X` | 0.27 | 角色横向中心（0.5 为正中央） |
 | `FIGURE_HEIGHT_RATIO` | 1.45 | 角色高度 / 画布高度，脚部出画面 |
-| `FIGURE_OPACITY` | light 0.65 / dark 0.70 | 角色不透明度 |
-| `FIGURE_FADE` | `[(0,1),(0.38,1),(0.50,0.36),(1,0.28)]` | 只压淡正文列那一侧 |
+| `FIGURE_OPACITY` | light 0.85 / dark 0.88 | 角色不透明度 |
+| `FIGURE_FADE` | `[(0,1),(0.344,1),(0.474,0.36),(1,0.28)]` | 只压淡正文列那一侧 |
 | `FIGURE_UNSHARP` | radius 2 / 90% | 角色层轻微锐化 |
 | `WASH_OPACITY` | light 0.10 / dark 0.12 | 柔和色域不透明度 |
 | `DARK_BRIGHTNESS` | 0.42 | 暗色档对角色本身的亮度压制 |

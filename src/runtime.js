@@ -30,7 +30,7 @@
 // ══════════════════════════════════════════════════════════════════════════
 
 const PLUGIN_ID = 'dsh-pardofelis-widget';
-const PLUGIN_VERSION = '1.2.3';
+const PLUGIN_VERSION = '1.2.5';
 
 /** localStorage 键。插件自己的偏好，与 DSH 的设置互不干扰。 */
 const LS_KEY = 'dsh-pardofelis-widget:v1';
