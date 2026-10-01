@@ -1,95 +1,101 @@
 # -*- coding: utf-8 -*-
-"""帕朵菲莉丝主题挂件 · 素材工具
+"""帕朵菲莉丝主题挂件 · 头像与取色工具
 
-从角色立绘（源图不放仓库）生成：
-  1. assets/avatar.webp  —— 悬浮按钮用的圆形头像（正方形，居中裁切）
-  2. tools/palette-report.txt —— 配色提取报告（供 DESIGN.md 引用）
+从两张源图生成挂件要用的素材：
+
+    photo/头像.jpg   ->  assets/avatar.webp        悬浮球与面板头部用的圆形头像
+    photo/立绘.png   ->  tools/palette-report.txt  配色取样报告（供 DESIGN.md 引用）
+
+两张源图随仓库发布在 photo/ 下，本脚本可从它们重新生成全部产物。
 
 用法：
-  python tools/make_avatar.py <立绘路径>
-
-只依赖 Pillow。源立绘受角色授权约束，不随仓库发布。
+    python tools/make_avatar.py
+只依赖 Pillow。
 """
 from __future__ import annotations
 
-import sys
+import colorsys
 from collections import Counter
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
-OUT_AVATAR = ROOT / "assets" / "avatar.webp"
+ASSETS = ROOT / "assets"
+PHOTO = ROOT / "photo"
+
+OUT_AVATAR = ASSETS / "avatar.webp"
 OUT_REPORT = HERE / "palette-report.txt"
 
-# 裁切窗口：以立绘尺寸为基准的比例。源立绘是 1080x2340 的竖构图，
-# 头部（含猫耳与头顶饰品）位于横向约 9%~60%、纵向约 18%~47% 处，
-# 取以 (0.38, 0.325) 为中心、半宽 0.296 的正方形，正好是头肩像。
-# 半宽半高都以【宽度】为单位，因此切口恒为正方形。
-CROP = dict(cx=0.3800, cy=0.3250, half=0.2960)
+AVATAR_SIZE = 256
+AVATAR_WEBP_QUALITY = 88
 
-# 眼睛（虹膜）采样窗口，按画面比例给出。角色唯一的强饱和色就在这两处，
-# 是整套 UI 的强调色来源。
+# 眼睛（虹膜）采样窗口，按立绘画幅比例给出。
+# 角色身上唯一的强饱和色就在这里，是整套 UI 强调色的来源。
 EYE_WINDOWS = {
     "iris-left": (0.283, 0.294, 0.310, 0.322),
     "iris-right": (0.368, 0.288, 0.395, 0.316),
 }
 
-AVATAR_SIZE = 256
+
+def flatten(im: Image.Image, background: tuple[int, int, int] = (255, 255, 255)) -> Image.Image:
+    """合成到白底，避免透明区域变成黑块。"""
+    canvas = Image.new("RGBA", im.size, (*background, 255))
+    return Image.alpha_composite(canvas, im.convert("RGBA")).convert("RGB")
 
 
-def crop_square(im: Image.Image) -> Image.Image:
-    """按比例窗口裁出一个正方形区域。"""
-    w, h = im.size
-    half = CROP["half"] * w
-    cx = CROP["cx"] * w
-    cy = CROP["cy"] * h
-    box = (round(cx - half), round(cy - half), round(cx + half), round(cy + half))
-    # 夹回画面内
-    box = (
-        max(0, min(box[0], w - 1)),
-        max(0, min(box[1], h - 1)),
-        max(1, min(box[2], w)),
-        max(1, min(box[3], h)),
-    )
-    return im.crop(box)
+def make_avatar(src: Path) -> Path:
+    """居中裁成正方形 -> 圆形遮罩 -> 输出 webp。
 
-
-def palette_report(im: Image.Image) -> str:
-    """提取主色，输出报告。
-
-    中性色（近白/近黑/低饱和灰）会被跳过，因为角色的主色调本身就是低饱和的
-    暖砂灰；真正的「彩色」只有眼睛那一处钴紫蓝，所以额外单独采样眼睛。
+    加圆形遮罩的原因：头像在界面上按圆形显示，源图若不是正圆（或四角不是纯色），
+    裁成圆形后四角会露出底色。
     """
-    import colorsys
+    im = Image.open(src).convert("RGB")
+    side = min(im.size)
+    left = (im.width - side) // 2
+    top = (im.height - side) // 2
+    square = im.crop((left, top, left + side, top + side)).resize(
+        (AVATAR_SIZE * 4, AVATAR_SIZE * 4), Image.LANCZOS,
+    )
 
-    flat = _flatten(im)
-    w, h = flat.size
-    small = flat.copy()
+    # 4 倍超采样画遮罩再缩回目标尺寸，边缘不会有锯齿
+    mask = Image.new("L", square.size, 0)
+    ImageDraw.Draw(mask).ellipse((0, 0, square.size[0] - 1, square.size[1] - 1), fill=255)
+    square.putalpha(mask)
+
+    avatar = square.resize((AVATAR_SIZE, AVATAR_SIZE), Image.LANCZOS)
+    ASSETS.mkdir(parents=True, exist_ok=True)
+    avatar.save(OUT_AVATAR, "WEBP", quality=AVATAR_WEBP_QUALITY, method=6)
+    return OUT_AVATAR
+
+
+def sample_clusters(title: str, im: Image.Image) -> list[str]:
+    """跳过中性色，统计有彩色像素的色簇。"""
+    small = im.copy()
     small.thumbnail((200, 440))
     counts: Counter[tuple[int, int, int]] = Counter()
     for r, g, b in small.getdata():
         hue, sat, val = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
         if sat < 0.12 or val < 0.12 or val > 0.97:
-            continue  # 跳过中性灰、近白、近黑
+            continue  # 中性灰、近白、近黑不计入
         counts[(int(hue * 360 // 15) * 15, round(sat, 1), round(val, 1))] += 1
+
     total = sum(counts.values()) or 1
-
-    lines = [
-        f"源图 {flat.size[0]}x{flat.size[1]}",
-        f"有彩色样本 {total}（低饱和暖砂灰为主，符合角色本色）",
-        "",
-        "【低饱和主色簇】",
-    ]
-    for (hue, sat, val), n in counts.most_common(14):
+    out = [f"【{title}】有彩色样本 {total}"]
+    for (hue, sat, val), n in counts.most_common(10):
         r, g, b = (int(x * 255) for x in colorsys.hsv_to_rgb(hue / 360, sat, val))
-        lines.append(f"  h={hue:>3} s={sat:.1f} v={val:.1f}  {n / total * 100:5.2f}%  #{r:02X}{g:02X}{b:02X}")
+        out.append(f"  h={hue:>3} s={sat:.1f} v={val:.1f}  {n / total * 100:5.2f}%  #{r:02X}{g:02X}{b:02X}")
+    return out
 
-    lines += ["", "【高饱和采样（眼睛等处）】"]
-    for name, (x0, y0, x1, y1) in EYE_WINDOWS.items():
+
+def sample_vivid(im: Image.Image, windows: dict[str, tuple[float, float, float, float]]) -> list[str]:
+    """在给定窗口里挑高饱和像素，用于取虹膜色。"""
+    w, h = im.size
+    out: list[str] = []
+    for name, (x0, y0, x1, y1) in windows.items():
         box = (round(x0 * w), round(y0 * h), round(x1 * w), round(y1 * h))
-        crop = flat.crop(box)
+        crop = im.crop(box)
         crop = crop.resize((crop.width * 3, crop.height * 3), Image.LANCZOS)
         vivid: Counter[tuple[int, int, int]] = Counter()
         for r, g, b in crop.getdata():
@@ -97,38 +103,69 @@ def palette_report(im: Image.Image) -> str:
             if sat > 0.40 and val > 0.35:
                 vivid[(r // 4 * 4, g // 4 * 4, b // 4 * 4)] += 1
         if not vivid:
-            lines.append(f"  {name}: 无高饱和样本（窗口可能未对准）")
+            out.append(f"  {name}: 无高饱和样本（窗口可能未对准）")
             continue
-        top = vivid.most_common(3)
-        pretty = "  ".join(f"#{r:02X}{g:02X}{b:02X}x{n}" for (r, g, b), n in top)
-        lines.append(f"  {name}: {pretty}")
+        pretty = "  ".join(f"#{r:02X}{g:02X}{b:02X}x{n}" for (r, g, b), n in vivid.most_common(3))
+        out.append(f"  {name}: {pretty}")
+    return out
+
+
+def palette_report(illustration: Path, avatar_src: Path) -> str:
+    """输出配色取样报告。
+
+    立绘本身几乎全是低饱和暖灰（直接聚类出来是白与黑），真正的彩色只有眼睛
+    那一处；头像那张的倾向又偏玫粉。两份都采，分开写清楚。
+    """
+    lines: list[str] = []
+
+    flat = flatten(Image.open(illustration))
+    lines += sample_clusters("立绘 photo/立绘.png 低饱和主色簇", flat)
+    lines += ["", "【立绘高饱和采样（虹膜）】"]
+    lines += sample_vivid(flat, EYE_WINDOWS)
+
+    if avatar_src.exists():
+        lines += ["", *sample_clusters("头像 photo/头像.jpg 低饱和主色簇",
+                                       Image.open(avatar_src).convert("RGB"))]
+
+    lines += [
+        "",
+        "【结论】",
+        "  背景与界面色调取自立绘：暖砂棕 #988479、猫耳藕粉 #D4B2A6、",
+        "  以及全图唯一的强饱和色——虹膜青蓝 #7CDCF4（作为强调色）。",
+        "  头像那张偏玫粉（#CCA3A3 / #CCADA3 / #E5B7B7），用于细节点缀。",
+    ]
     return "\n".join(lines)
 
 
-def _flatten(im: Image.Image) -> Image.Image:
-    """合成到白底，避免透明区域变成黑块。"""
-    bg = Image.new("RGBA", im.size, (255, 255, 255, 255))
-    return Image.alpha_composite(bg, im.convert("RGBA")).convert("RGB")
+def resolve_source(name: str) -> Path:
+    """定位源图。
+
+    优先用仓库内的 photo/（源图随仓库发布），找不到再退回仓库的上一级目录——
+    开发时源图常放在项目外层，两种布局都要能用。
+    """
+    in_repo = PHOTO / name
+    if in_repo.exists():
+        return in_repo
+    return ROOT.parent / "photo" / name
 
 
 def main() -> int:
-    src = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT.parent / "photo" / "立绘.png"
-    if not src.exists():
-        print(f"找不到立绘：{src}")
+    illustration = resolve_source("立绘.png")
+    avatar_src = resolve_source("头像.jpg")
+    if not illustration.exists():
+        print(f"找不到立绘：{illustration}")
+        return 2
+    if not avatar_src.exists():
+        print(f"找不到头像：{avatar_src}")
         return 2
 
-    im = Image.open(src)
-    report = palette_report(im)
-
-    flat = _flatten(im)
-    square = crop_square(flat)
-    avatar = square.resize((AVATAR_SIZE, AVATAR_SIZE), Image.LANCZOS)
-
-    OUT_AVATAR.parent.mkdir(parents=True, exist_ok=True)
-    avatar.save(OUT_AVATAR, "WEBP", quality=86, method=6)
+    print(f"立绘  <- {illustration}")
+    print(f"头像  <- {avatar_src}")
+    avatar_path = make_avatar(avatar_src)
+    report = palette_report(illustration, avatar_src)
     OUT_REPORT.write_text(report + "\n", encoding="utf-8")
 
-    print(f"头像  -> {OUT_AVATAR}  ({OUT_AVATAR.stat().st_size / 1024:.1f} KiB)  {square.size}px 源裁切")
+    print(f"头像  -> {avatar_path}  ({avatar_path.stat().st_size / 1024:.1f} KiB)")
     print(f"报告  -> {OUT_REPORT}")
     return 0
 

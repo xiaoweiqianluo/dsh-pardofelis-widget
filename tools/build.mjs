@@ -20,7 +20,7 @@ import { buildBundle, ROOT } from './build-core.mjs';
 const checkOnly = process.argv.includes('--check');
 const target = join(ROOT, 'bundle', 'client.js');
 
-const { output, avatarBytes, avatarUrlBytes } = await buildBundle();
+const { output, assets } = await buildBundle();
 const kib = (value) => `${(value / 1024).toFixed(1)} KiB`;
 
 if (checkOnly) {
@@ -34,6 +34,8 @@ if (checkOnly) {
 } else {
   await writeFile(target, output, 'utf8');
   console.log('[build] wrote bundle/client.js');
-  console.log(`[build] avatar inlined: ${kib(avatarBytes)} -> base64 ${kib(avatarUrlBytes)}`);
+  for (const asset of assets) {
+    console.log(`[build] inlined ${asset.name.padEnd(14)} ${kib(asset.bytes)} -> base64 ${kib(asset.urlBytes)}`);
+  }
   console.log(`[build] output size: ${kib(Buffer.byteLength(output))}`);
 }

@@ -182,7 +182,7 @@ async function main() {
     const pattern = new RegExp(`\\.style\\.${prop}\\b`);
     check(`不写 document/元素 的 style.${prop}`, !pattern.test(code));
   }
-  check('不查询或修改 styleSheets', !code.includes('styleSheets') && !/document\.head/.test(code));
+  check('不查询或修改 styleSheets', !code.includes('styleSheets'));
   check('不修改 body / documentElement 的样式',
     !/body\.style/.test(code) && !/documentElement\.style/.test(code));
   check('不使用 insertBefore / replaceChild 改动原节点',
@@ -245,6 +245,62 @@ async function main() {
     check('移动端有独立布局（media query）', css.includes('@media (max-width: 640px)'));
     check('尊重 prefers-reduced-motion', css.includes('prefers-reduced-motion'));
   }
+
+  section('文档级主题');
+
+  {
+    const themeMatch = runtime.match(/const THEME_STYLES = `([\s\S]*?)`;/);
+    check('找到主题样式表', themeMatch !== null);
+    if (themeMatch !== null) {
+      const theme = themeMatch[1];
+      // 规则头里带引号的属性选择器会让「按 } 切段」的简单解析断掉，
+      // 所以这里只数前缀出现次数：主题里的规则头数量应当与命名空间前缀一致。
+      // THEME_STYLES 是模板字面量，规则头里的 ${THEME_ATTR_VALUE} 也带花括号，
+      // 计数前要先把占位符抹掉，否则规则头数量会被多算一倍。
+      const flatTheme = theme.replace(/\$\{[^}]*\}/g, 'X');
+      const ruleHeads = (flatTheme.match(/\{/g) || []).length;
+      const namespacedHeads = (flatTheme.match(/html\[data-dsh-pardofelis=/g) || []).length;
+      check('主题里的每条规则都以命名空间属性为前缀（卸载即可整体撤销）',
+        ruleHeads > 0 && ruleHeads === namespacedHeads,
+        `${ruleHeads} 个规则头 / ${namespacedHeads} 个带前缀`);
+      check('主题给 html 设了底色与壁纸', /background-color:/.test(theme) && /background-image:/.test(theme));
+      check('主题不碰文字色（label-*）', !/--dsw-alias-label-/.test(theme));
+      check('主题不碰语义色（state-*）', !/--dsw-alias-state-/.test(theme));
+      check('主题不碰代码高亮（markdown-* / code-diff-*）',
+        !/--dsw-alias-markdown-/.test(theme) && !/--dsw-alias-code-diff-/.test(theme));
+      check('主题只覆盖令牌值，不含任何布局属性',
+        !/(^|[;{\s])(display|flex|grid|position|width|height|margin|padding)\s*:/.test(theme));
+      check('暗色档壁纸由 html 上的标记切换', /\[data-pw-dark="on"\]/.test(theme));
+    }
+    check('壁纸以变量注入，且两个槽位都在', /--pw-wallpaper-light/.test(runtime) && /--pw-wallpaper-dark/.test(runtime));
+    check('主题样式表有稳定 id（幂等注入依赖它）', /const THEME_STYLE_ID = '/.test(runtime));
+    check('卸载时会摘除主题样式表', /removeDocumentTheme/.test(runtime) && /style\.remove\(\)/.test(runtime));
+    check('卸载时会摘除 html 上的主题属性',
+      /documentElement\.removeAttribute\(HOST_ATTR\)/.test(runtime));
+    check('主题在首个 effect 里注入（不依赖对话页）', /installDocumentTheme\(\);/.test(runtime));
+  }
+
+  section('内联资源（零请求的前提）');
+
+  {
+    for (const [name, marker] of [
+      ['头像', 'data:image/webp;base64,'],
+    ]) {
+      check(`${name}以 data: URL 内联`, bundle.includes(marker));
+    }
+    check('两张壁纸都被内联', (bundle.match(/data:image\/webp;base64,/g) || []).length >= 3,
+      `${(bundle.match(/data:image\/webp;base64,/g) || []).length} 处`);
+    for (const marker of ['__DSH_PARDOFELIS_AVATAR__', '__DSH_PARDOFELIS_BG_LIGHT__', '__DSH_PARDOFELIS_BG_DARK__']) {
+      check(`构建占位符已全部替换（${marker}）`, !bundle.includes(marker));
+    }
+  }
+
+  section('SVG 必须走命名空间（v1.0.0 的空白按钮事故）');
+
+  check('用 createElementNS 创建 SVG 元素', /createElementNS\(SVG_NS,/.test(runtime));
+  check('没有用 createElement 造 svg', !/el\('svg'/.test(runtime));
+  check('没有用 createElement 造 path/rect',
+    !/el\('path'/.test(runtime) && !/el\('rect'/.test(runtime));
 
   section('只在对话页挂载');
 

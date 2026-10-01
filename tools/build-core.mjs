@@ -16,8 +16,12 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-export const AVATAR_MARKER = '__DSH_PARDOFELIS_AVATAR__';
 export const RUNTIME_SLOT = '/*__RUNTIME__*/';
+
+/** 需要内联成 data: URL 的资源占位符（出现在 src/runtime.js 里）。 */
+export const AVATAR_MARKER = '__DSH_PARDOFELIS_AVATAR__';
+export const BACKGROUND_LIGHT_MARKER = '__DSH_PARDOFELIS_BG_LIGHT__';
+export const BACKGROUND_DARK_MARKER = '__DSH_PARDOFELIS_BG_DARK__';
 
 /** 插件承诺零网络行为；这些名字不允许出现在可执行代码里。 */
 export const NETWORK_APIS = [
@@ -75,27 +79,44 @@ export function stripCommentsAndStrings(source) {
 
 /**
  * 生成 bundle/client.js 的内容。
- * @returns {Promise<{ output: string, avatarBytes: number, avatarUrlBytes: number }>}
+ *
+ * 三张图都以 data: URL 内联，因此插件在运行时【一个网络请求都不发】——
+ * 这也正是 Host 半边可以完全是空操作的原因。
+ * @returns {Promise<{ output: string, assets: Array<{name: string, bytes: number, urlBytes: number}> }>}
  */
 export async function buildBundle() {
-  const [shell, runtime, avatar] = await Promise.all([
+  const [shell, runtime, avatar, bgLight, bgDark] = await Promise.all([
     readFile(join(ROOT, 'src', 'client.js'), 'utf8'),
     readFile(join(ROOT, 'src', 'runtime.js'), 'utf8'),
     readFile(join(ROOT, 'assets', 'avatar.webp')),
+    readFile(join(ROOT, 'assets', 'bg-light.webp')),
+    readFile(join(ROOT, 'assets', 'bg-dark.webp')),
   ]);
 
   if (!shell.includes(RUNTIME_SLOT)) {
     throw new Error(`src/client.js 缺少注入点 ${RUNTIME_SLOT}`);
   }
-  if (!runtime.includes(AVATAR_MARKER)) {
-    throw new Error(`src/runtime.js 缺少占位符 ${AVATAR_MARKER}`);
+
+  const inlined = [
+    { name: 'avatar.webp', marker: AVATAR_MARKER, bytes: avatar },
+    { name: 'bg-light.webp', marker: BACKGROUND_LIGHT_MARKER, bytes: bgLight },
+    { name: 'bg-dark.webp', marker: BACKGROUND_DARK_MARKER, bytes: bgDark },
+  ];
+
+  let body = runtime;
+  const assets = [];
+  for (const asset of inlined) {
+    if (!body.includes(asset.marker)) {
+      throw new Error(`src/runtime.js 缺少占位符 ${asset.marker}`);
+    }
+    const url = `data:image/webp;base64,${asset.bytes.toString('base64')}`;
+    body = body.replace(asset.marker, url);
+    assets.push({ name: asset.name, bytes: asset.bytes.length, urlBytes: Buffer.byteLength(url) });
   }
 
-  const avatarUrl = `data:image/webp;base64,${avatar.toString('base64')}`;
-  const body = runtime.replace(AVATAR_MARKER, avatarUrl);
   const banner = [
     '// BUILD ARTIFACT - do not edit.',
-    '// Source: src/client.js + src/runtime.js + assets/avatar.webp',
+    '// Source: src/client.js + src/runtime.js + assets/*.webp',
     '// Rebuild: node tools/build.mjs',
     '',
   ].join('\n');
@@ -105,8 +126,10 @@ export async function buildBundle() {
   if (output.includes(RUNTIME_SLOT)) {
     throw new Error('runtime 注入失败：注入点仍留在产物里');
   }
-  if (output.includes(AVATAR_MARKER)) {
-    throw new Error(`头像内联失败：${AVATAR_MARKER} 仍留在产物里`);
+  for (const asset of inlined) {
+    if (output.includes(asset.marker)) {
+      throw new Error(`资源内联失败：${asset.marker} 仍留在产物里（${asset.name}）`);
+    }
   }
   const code = stripCommentsAndStrings(output);
   for (const api of NETWORK_APIS) {
@@ -118,9 +141,5 @@ export async function buildBundle() {
     }
   }
 
-  return {
-    output,
-    avatarBytes: avatar.length,
-    avatarUrlBytes: Buffer.byteLength(avatarUrl),
-  };
+  return { output, assets };
 }

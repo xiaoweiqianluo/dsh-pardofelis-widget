@@ -122,17 +122,69 @@ async function run() {
   check('按钮是 button 元素（可键盘聚焦）', $(env, '.pw-launcher').tagName === 'BUTTON');
   equal('面板初始收起', $(env, '.pw-panel').getAttribute('data-open'), 'false');
 
+  section('图标命名空间（曾经全部不渲染的 bug）');
+
+  {
+    // 在 HTML 文档里用 createElement('svg') 造出来的节点落在 HTML 命名空间，
+    // 浏览器不会渲染它——按钮会是空白方块，而 CSS 一切正常。
+    // v1.0.0 就是这样把走带按钮做成空白的，所以这里把命名空间钉死。
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+    const svgs = $$(env, 'svg');
+    check('面板里有内联 SVG 图标', svgs.length > 0, `${svgs.length} 个`);
+    check('所有 SVG 都在 SVG 命名空间下',
+      svgs.every((node) => node.namespaceURI === SVG_NS),
+      svgs.map((node) => node.namespaceURI).join(', '));
+    const paths = $$(env, 'path');
+    check('SVG 子元素（path）也在 SVG 命名空间下',
+      paths.length > 0 && paths.every((node) => node.namespaceURI === SVG_NS),
+      `${paths.length} 个 path`);
+    const rects = $$(env, 'rect');
+    check('暂停图标的两根竖条用 SVG 命名空间',
+      rects.every((node) => node.namespaceURI === SVG_NS));
+    check('走带按钮里确实有图形子节点',
+      ['[aria-label="播放"], [aria-label="暂停"]', '[aria-label="下一首"]', '[aria-label="上一首"]']
+        .every((selector) => $(env, selector).children.length > 0));
+  }
+
+  section('文档级主题');
+
+  {
+    const html = env.document.documentElement;
+    equal('主题标记加在 html 上', html.getAttribute('data-dsh-pardofelis'), 'on');
+    const themeStyle = env.document.getElementById('dsh-pardofelis-theme');
+    check('主题样式表已注入 head', themeStyle !== null);
+    check('主题样式表放在 head 里（不插进内容区）', themeStyle?.parentElement === env.document.head);
+    check('主题样式表带壁纸变量',
+      themeStyle !== null
+      && themeStyle.textContent.includes('--pw-wallpaper-light')
+      && themeStyle.textContent.includes('--pw-wallpaper-dark'));
+    check('壁纸以 data: URL 内联（不产生请求）',
+      themeStyle !== null && themeStyle.textContent.includes('data:image/webp;base64,'));
+    check('主题只覆盖背景族令牌，不碰文字与状态色',
+      themeStyle !== null
+      && !/--dsw-alias-label-|--dsw-alias-state-|--dsw-alias-markdown-/.test(themeStyle.textContent));
+    equal('亮色档不设置暗色标记', html.getAttribute('data-pw-dark'), null);
+  }
+
+  section('主题是全局的，挂件才是对话页专属');
+
+  {
+    // 离开对话页：挂件必须卸载，主题必须留着。
+    env.leaveChat();
+    env.flush();
+    equal('离开对话页后挂件宿主被移除', env.document.body.querySelector(`#${HOST_ID}`), null);
+    equal('离开对话页后主题标记仍在', env.document.documentElement.getAttribute('data-dsh-pardofelis'), 'on');
+    check('离开对话页后主题样式表仍在', env.document.getElementById('dsh-pardofelis-theme') !== null);
+    env.enterChat();
+    env.flush();
+    check('回到对话页后挂件重新挂载', env.document.body.querySelector(`#${HOST_ID}`) !== null);
+    equal('主题样式表没有被重复注入',
+      env.document.documentElement.querySelectorAll('#dsh-pardofelis-theme').length, 1);
+  }
+
   env.mutate();
   env.flush();
   equal('重复调度后仍只有一个宿主节点', env.document.body.querySelectorAll(`#${HOST_ID}`).length, 1);
-
-  env.leaveChat();
-  env.flush();
-  equal('离开对话页后宿主节点被移除', env.document.body.querySelector(`#${HOST_ID}`), null);
-
-  env.enterChat();
-  env.flush();
-  check('回到对话页后重新挂载', env.document.body.querySelector(`#${HOST_ID}`) !== null);
 
   section('面板开合与持久化');
 
@@ -360,6 +412,9 @@ async function run() {
     check('卸载过程中确实做了 revoke', env2.revoked.length >= revokedBefore);
     equal('卸载后残余事件监听被摘除', launcher.listenerCount('click'), 0);
     check('卸载后观察器已断开', env2.observers.every((observer) => observer.disconnected));
+    equal('卸载后主题样式表被摘除', env2.document.getElementById('dsh-pardofelis-theme'), null);
+    equal('卸载后 html 上的主题标记被摘除',
+      env2.document.documentElement.getAttribute('data-dsh-pardofelis'), null);
   }
 
   section('持久化与明暗跟随');
@@ -391,6 +446,9 @@ async function run() {
     env2.flush();
     const surface = env2.document.body.querySelector(`#${HOST_ID}`).shadowRoot.querySelector('.pw-surface');
     check(label, surface.classList.contains(expectedClass));
+    // 壁纸是两档各自的图，靠 html 上的 data-pw-dark 切换
+    equal(`${dark ? '暗' : '亮'}色档的壁纸切换标记`,
+      env2.document.documentElement.getAttribute('data-pw-dark'), dark ? 'on' : null);
     plugin2.disposeEffects();
     env2.flush();
     env2.restore();

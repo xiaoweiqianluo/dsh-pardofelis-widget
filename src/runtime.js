@@ -30,7 +30,7 @@
 // ══════════════════════════════════════════════════════════════════════════
 
 const PLUGIN_ID = 'dsh-pardofelis-widget';
-const PLUGIN_VERSION = '1.0.0';
+const PLUGIN_VERSION = '1.1.0';
 
 /** localStorage 键。插件自己的偏好，与 DSH 的设置互不干扰。 */
 const LS_KEY = 'dsh-pardofelis-widget:v1';
@@ -59,9 +59,14 @@ const PLAY_MODE_LABEL = {
 
 const DEFAULTS = { volume: 0.8, mode: 'sequence', open: false };
 
-// 头像：由 tools/build.mjs 把 assets/avatar.webp 内联成 data: URL。
-// 内联而不是走 HTTP 路由，是为了「零请求」——挂件不产生任何网络流量。
+/** 头像：由 tools/build.mjs 把 assets/avatar.webp 内联成 data: URL。
+ *  内联而不是走 HTTP 路由，是为了「零请求」——挂件不产生任何网络流量。 */
 const AVATAR_URL = '__DSH_PARDOFELIS_AVATAR__';
+
+/** 主题壁纸：同样由构建脚本内联，避免为两张图新增网络请求。
+ *  两档各一张，按明暗切换；尺寸与压缩见 tools/make_wallpaper.py。 */
+const WALLPAPER_LIGHT_URL = '__DSH_PARDOFELIS_BG_LIGHT__';
+const WALLPAPER_DARK_URL = '__DSH_PARDOFELIS_BG_DARK__';
 
 // ══════════════════════════════════════════════════════════════════════════
 //  调色板
@@ -472,14 +477,6 @@ const STYLES = `
   font-size: 11.5px; line-height: 1.6;
 }
 .pw-note[hidden] { display: none; }
-.pw-foot {
-  flex: 0 0 auto;
-  padding: 7px 13px 9px;
-  border-top: 1px solid var(--pw-border);
-  font-size: 10.5px; color: var(--pw-text-dim);
-  display: flex; align-items: center; gap: 6px;
-}
-.pw-foot svg { flex: 0 0 auto; }
 
 /* ── 移动端 ───────────────────────────────────────────────────────────── */
 /* 抬高按钮并收窄面板，避开输入框与发送按钮 */
@@ -505,6 +502,98 @@ const STYLES = `
   .pw-launcher[data-playing="true"]::after { animation: none; opacity: 0.5; }
 }
 `;
+
+// ══════════════════════════════════════════════════════════════════════════
+//  文档级主题
+// ══════════════════════════════════════════════════════════════════════════
+//
+//  挂件之外，插件还给整个界面加一层「帕朵菲莉丝」的主题：
+//  一张以角色立绘为主题的壁纸，加上把 DSH 自己的配色往角色色相上偏的染色。
+//
+//  ── 壁纸挂在哪一层 ────────────────────────────────────────────────────
+//  挂在 html::before 上：html 是根元素，它自己的伪元素天然画在 body 的背景
+//  之下，所以不需要 z-index 去和 DSH 的任何元素争层级。用 body::before 反而
+//  会画在 body 背景之上，盖住 DSH 自己的底色。
+//
+//  ── 为什么要改 DSH 的配色令牌 ─────────────────────────────────────────
+//  DSH 把整套配色定义为 --dsw-alias-* 令牌（约 100 个），挂在 body 上，
+//  明暗两档靠 body[data-ds-dark-theme] 重定义。壁纸一旦上色，原来的
+//  「白底 + 深字」与「深底 + 浅字」的对比度假设就会变化，所以必须把
+//  背景族令牌一起往角色色相上偏、并加一点透明度让壁纸透出来。
+//  只动【背景族】与滚动条；文字色、状态色、代码高亮、报错色一律不碰——
+//  那些一改就得重新证明对比度，而且会丢语义。
+//
+//  ── 为什么用 !important ────────────────────────────────────────────────
+//  DSH 的令牌定义在它自己的样式表里，且选择器形态未知（打包产物里同一批
+//  令牌在 body 与 body[data-ds-dark-theme] 下各出现两次）。插件样式表的
+//  插入位置取决于模块加载顺序，不如把优先级显式定死。这里加 !important 的
+//  对象是 CSS 自定义属性，只会影响颜色，不涉及任何布局属性。
+
+const THEME_ATTR_VALUE = 'on';
+
+const THEME_STYLES = `
+html[data-dsh-pardofelis="${THEME_ATTR_VALUE}"] {
+  background-color: #FFFCFA !important;
+  background-image: var(--pw-wallpaper-light);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+html[data-dsh-pardofelis="${THEME_ATTR_VALUE}"][data-pw-dark="on"] {
+  background-color: #1E1C24 !important;
+  background-image: var(--pw-wallpaper-dark);
+}
+
+/*
+ * 染色：把 DSH 的背景族令牌往角色色相（暖砂 / 藕粉 / 靛紫）上偏，
+ * 并给一部分加透明度，让下面的壁纸透出来。
+ * 每个变量都带 DSH 原值作回退，取不到令牌时行为与未加主题一致。
+ */
+html[data-dsh-pardofelis="${THEME_ATTR_VALUE}"] body {
+  --dsw-alias-bg-base: rgba(255, 252, 250, 0.80) !important;
+  --dsw-alias-bg-layer-1: rgba(255, 251, 248, 0.88) !important;
+  --dsw-alias-bg-layer-2: rgba(253, 246, 243, 0.83) !important;
+  --dsw-alias-bg-layer-3: rgba(251, 243, 240, 0.78) !important;
+  --dsw-alias-bg-overlay: rgba(255, 252, 250, 0.94) !important;
+  --dsw-alias-bg-mask-1: rgba(74, 58, 52, 0.06) !important;
+  --dsw-alias-bg-mask-2: rgba(74, 58, 52, 0.10) !important;
+  --dsw-alias-bg-mask-3: rgba(74, 58, 52, 0.16) !important;
+  --dsw-alias-bg-mask-drop: rgba(74, 58, 52, 0.22) !important;
+  --dsw-alias-bg-skeleton: rgba(152, 132, 121, 0.16) !important;
+  --dsw-alias-bg-multi-select: rgba(79, 90, 144, 0.20) !important;
+  --dsw-alias-interactive-bg-hover: rgba(152, 132, 121, 0.13) !important;
+  --dsw-alias-interactive-bg-active: rgba(152, 132, 121, 0.19) !important;
+  --dsw-alias-interactive-bg-hover-solid: rgba(244, 232, 226, 0.96) !important;
+  --dsw-alias-scrollbar-bg-l1: rgba(152, 132, 121, 0.20) !important;
+  --dsw-alias-scrollbar-hover-l1: rgba(152, 132, 121, 0.36) !important;
+  --dsw-alias-scrollbar-bg-l2: rgba(152, 132, 121, 0.26) !important;
+  --dsw-alias-scrollbar-hover-l2: rgba(152, 132, 121, 0.44) !important;
+}
+html[data-dsh-pardofelis="${THEME_ATTR_VALUE}"][data-pw-dark="on"] body {
+  --dsw-alias-bg-base: rgba(30, 28, 36, 0.74) !important;
+  --dsw-alias-bg-layer-1: rgba(36, 33, 42, 0.86) !important;
+  --dsw-alias-bg-layer-2: rgba(41, 38, 48, 0.82) !important;
+  --dsw-alias-bg-layer-3: rgba(46, 42, 54, 0.78) !important;
+  --dsw-alias-bg-overlay: rgba(30, 28, 36, 0.94) !important;
+  --dsw-alias-bg-mask-1: rgba(0, 0, 0, 0.18) !important;
+  --dsw-alias-bg-mask-2: rgba(0, 0, 0, 0.26) !important;
+  --dsw-alias-bg-mask-3: rgba(0, 0, 0, 0.34) !important;
+  --dsw-alias-bg-mask-drop: rgba(0, 0, 0, 0.44) !important;
+  --dsw-alias-bg-skeleton: rgba(212, 178, 166, 0.12) !important;
+  --dsw-alias-bg-multi-select: rgba(185, 194, 240, 0.20) !important;
+  --dsw-alias-interactive-bg-hover: rgba(212, 178, 166, 0.15) !important;
+  --dsw-alias-interactive-bg-active: rgba(212, 178, 166, 0.22) !important;
+  --dsw-alias-interactive-bg-hover-solid: rgba(56, 51, 64, 0.96) !important;
+  --dsw-alias-scrollbar-bg-l1: rgba(212, 178, 166, 0.20) !important;
+  --dsw-alias-scrollbar-hover-l1: rgba(212, 178, 166, 0.36) !important;
+  --dsw-alias-scrollbar-bg-l2: rgba(212, 178, 166, 0.26) !important;
+  --dsw-alias-scrollbar-hover-l2: rgba(212, 178, 166, 0.44) !important;
+}
+`;
+
+/** 主题样式表的宿主 id，卸载时按它摘除。 */
+const THEME_STYLE_ID = 'dsh-pardofelis-theme';
 
 // ══════════════════════════════════════════════════════════════════════════
 //  小工具
@@ -548,28 +637,55 @@ function el(tag, attrs, children) {
   return node;
 }
 
+/** SVG 命名空间。在这之上创建的节点才会被浏览器当图形渲染。 */
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/**
+ * 创建 SVG 元素。
+ *
+ * 必须用 createElementNS：在 HTML 文档里用 createElement('svg') 造出来的节点
+ * 落在 HTML 命名空间，浏览器不会把它当 SVG 渲染——结果是按钮里什么都没有，
+ * 而 CSS 的尺寸、圆角、悬停全部正常，看起来像"图标丢了"。
+ * 这个坑踩过一次（v1.0.0 的走带按钮全是空白方块）。
+ */
+function svgEl(tag, attrs, children) {
+  const node = document.createElementNS(SVG_NS, tag);
+  if (attrs) {
+    for (const key of Object.keys(attrs)) {
+      const value = attrs[key];
+      if (value === undefined || value === null || value === false) continue;
+      node.setAttribute(key, value === true ? '' : String(value));
+    }
+  }
+  for (const child of children || []) {
+    if (child === null || child === undefined) continue;
+    node.append(child);
+  }
+  return node;
+}
+
 /** 行内 SVG 图标。不上传、不请求，纯路径数据。 */
 function icon(name, size) {
   const svg = (paths) =>
-    el('svg', {
+    svgEl('svg', {
       viewBox: '0 0 24 24', width: size, height: size, fill: 'none',
       stroke: 'currentColor', 'stroke-width': '1.8',
       'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true',
       focusable: 'false',
-    }, paths.map((d) => el('path', { d })));
+    }, paths.map((d) => svgEl('path', { d })));
   switch (name) {
     case 'plus':
       return svg(['M12 5v14', 'M5 12h14']);
     case 'play':
-      return el('svg', {
+      return svgEl('svg', {
         viewBox: '0 0 24 24', width: size, height: size, 'aria-hidden': 'true', focusable: 'false',
-      }, [el('path', { d: 'M8 5.2v13.6L19 12z', fill: 'currentColor', stroke: 'none' })]);
+      }, [svgEl('path', { d: 'M8 5.2v13.6L19 12z', fill: 'currentColor', stroke: 'none' })]);
     case 'pause':
-      return el('svg', {
+      return svgEl('svg', {
         viewBox: '0 0 24 24', width: size, height: size, 'aria-hidden': 'true', focusable: 'false',
       }, [
-        el('rect', { x: '7', y: '5', width: '3.4', height: '14', rx: '1.1', fill: 'currentColor', stroke: 'none' }),
-        el('rect', { x: '13.6', y: '5', width: '3.4', height: '14', rx: '1.1', fill: 'currentColor', stroke: 'none' }),
+        svgEl('rect', { x: '7', y: '5', width: '3.4', height: '14', rx: '1.1', fill: 'currentColor', stroke: 'none' }),
+        svgEl('rect', { x: '13.6', y: '5', width: '3.4', height: '14', rx: '1.1', fill: 'currentColor', stroke: 'none' }),
       ]);
     case 'prev':
       return svg(['M18.5 6.2v11.6L9.8 12z', 'M5.5 5.5v13']);
@@ -589,8 +705,6 @@ function icon(name, size) {
       return svg(['M6.5 6.5l11 11', 'M17.5 6.5l-11 11']);
     case 'trash':
       return svg(['M5.5 7.5h13', 'M9.5 7.5V5.5h5v2', 'M7 7.5l.8 11a1 1 0 0 0 1 1h6.4a1 1 0 0 0 1-1l.8-11']);
-    case 'shield':
-      return svg(['M12 3.5l7 2.6v5.3c0 4.2-2.9 7.6-7 9.1-4.1-1.5-7-4.9-7-9.1V6.1z', 'M9 12.2l2.1 2.1L15 10.5']);
     case 'cat':
       return svg(['M4 9.5 6.5 5l3 3.2h5L17.5 5 20 9.5', 'M4 9.5c0 5 3.6 8.5 8 8.5s8-3.5 8-8.5']);
     default:
@@ -827,10 +941,6 @@ class PardofelisWidget {
         el('div', {}, [el('strong', { text: '还没有音乐' })]),
         el('div', { text: '点上面的「导入本地音乐」选择音频文件。' }),
         el('div', { text: '支持多选，文件只在这台电脑上播放。' }),
-      ]),
-      el('div', { class: 'pw-foot' }, [
-        icon('shield', 13),
-        el('span', { text: '仅本地处理 · 不联网 · 不上传' }),
       ]),
     ]);
 
@@ -1567,6 +1677,34 @@ function apply(ctx) {
     }
   }
 
+  // ── 文档级主题：注入 / 摘除 ────────────────────────────────────────────
+
+  /** 把主题样式表放进文档。幂等：已存在就复用，不重复注入。 */
+  function installDocumentTheme() {
+    if (document.getElementById(THEME_STYLE_ID) !== null) return;
+    const style = document.createElement('style');
+    style.id = THEME_STYLE_ID;
+    // 壁纸以 CSS 变量喂给样式表：两个槽位在构建时被替换成 data: URL
+    style.textContent =
+      `:root{--pw-wallpaper-light:url("${WALLPAPER_LIGHT_URL}");`
+      + `--pw-wallpaper-dark:url("${WALLPAPER_DARK_URL}");}\n`
+      + THEME_STYLES;
+    // 关键：样式表放 head。放在 body 里会被 DSH 的布局当成内容，虽然
+    // <style> 本身不渲染，但没有必要把东西插进 body 的内容区。
+    document.head.append(style);
+    // 样式表里的每条规则都以这个属性为前缀，加在 html 上：
+    // 它既是「主题已启用」的开关，也是卸载时一键撤销的把手。
+    document.documentElement.setAttribute(HOST_ATTR, THEME_ATTR_VALUE);
+  }
+
+  /** 摘除主题样式表与它加在 html 上的属性，页面完全复原。 */
+  function removeDocumentTheme() {
+    const style = document.getElementById(THEME_STYLE_ID);
+    if (style !== null) style.remove();
+    document.documentElement.removeAttribute(HOST_ATTR);
+    document.documentElement.removeAttribute('data-pw-dark');
+  }
+
   function schedule() {
     if (mountQueued) return;
     mountQueued = true;
@@ -1578,8 +1716,13 @@ function apply(ctx) {
   }
 
   function syncTheme() {
-    if (shadow === null) return;
     const theme = detectTheme();
+    // 文档级主题的明暗档：换壁纸用。属性加在 html 上，与挂件宿主无关，
+    // 因此离开对话页卸载挂件时它依然存在（主题是全局的）。
+    const root = document.documentElement;
+    if (theme === 'dark') root.setAttribute('data-pw-dark', 'on');
+    else root.removeAttribute('data-pw-dark');
+    if (shadow === null) return;
     const surface = shadow.querySelector('.pw-surface');
     if (surface === null) return;
     surface.classList.remove('pw-theme-light', 'pw-theme-dark');
@@ -1612,6 +1755,10 @@ function apply(ctx) {
   }
 
   ctx.effect(() => {
+    // 主题是【全局】的：整个界面（首页、设置、对话）都换成帕朵菲莉丝的底色，
+    // 而不是只在对话页生效。悬浮挂件仍然只在对话页出现，两者互不耦合。
+    installDocumentTheme();
+    syncTheme();
     schedule();
     return () => {
       window.removeEventListener('popstate', onHistory);
@@ -1621,6 +1768,7 @@ function apply(ctx) {
         observer = null;
       }
       unmount();
+      removeDocumentTheme();
     };
   }, `${PLUGIN_ID}: mount lifecycle`);
 

@@ -9,6 +9,9 @@
 //  只实现插件用到的那部分 DOM 子集，不是通用 DOM 实现。
 // ══════════════════════════════════════════════════════════════════════════
 
+const HTML_NS = 'http://www.w3.org/1999/xhtml';
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
 // ── 选择器匹配：只支持插件与测试实际用到的形式 ────────────────────────────
 //   #id / 标签名 / .class / [attr] / [attr="value"] / 逗号多选 / 空格后代
 function matchesSimple(el, selector) {
@@ -56,8 +59,11 @@ class FakeClassList {
 }
 
 class FakeNode {
-  constructor(tagName) {
+  constructor(tagName, namespace) {
     this.tagName = String(tagName).toUpperCase();
+    // 记录命名空间：SVG 必须用 createElementNS 创建，否则浏览器不渲染。
+    // 仿真把这件事记下来，测试才有办法抓住这个错误（v1.0.0 踩过一次）。
+    this.namespaceURI = namespace === undefined ? HTML_NS : namespace;
     this.children = [];
     this.parentElement = null;
     this.attributes = new Map();
@@ -222,7 +228,7 @@ class FakeTextNode {
 function makeText(text) { return new FakeTextNode(text); }
 
 class FakeShadowRoot extends FakeNode {
-  constructor(host) { super('#shadow-root'); this.host = host; }
+  constructor(host) { super('#shadow-root', HTML_NS); this.host = host; }
 }
 
 class FakeElement extends FakeNode {}
@@ -238,18 +244,27 @@ Object.defineProperty(FakeElement.prototype, 'id', {
 class FakeDocument extends FakeNode {
   constructor() {
     super('#document');
-    this.documentElement = new FakeElement('html');
-    this.body = new FakeElement('body');
+    this.documentElement = new FakeElement('html', HTML_NS);
+    this.head = new FakeElement('head', HTML_NS);
+    this.body = new FakeElement('body', HTML_NS);
     // documentElement 必须是 document 的子节点，否则从 document 出发的
     // 查询遍历永远走不到 body（这正是 isChatPage 判否的原因）。
     this.append(this.documentElement);
+    this.documentElement.append(this.head);
     this.documentElement.append(this.body);
     markConnected(this.body, true);
     this.activeElement = null;
     this.title = '';
   }
-  createElement(tagName) { return new FakeElement(tagName); }
+  createElement(tagName) { return new FakeElement(tagName, HTML_NS); }
+  createElementNS(namespace, tagName) { return new FakeElement(tagName, namespace); }
   createTextNode(text) { return makeText(text); }
+
+  /** 按 id 查元素（含 Shadow Root 内部）。插件用它判断样式表是否已注入。 */
+  getElementById(id) {
+    const all = this.querySelectorAll(`#${id}`);
+    return all.length > 0 ? all[0] : null;
+  }
 }
 
 /** 观察器回调改为排队执行，避免「挂载 DOM -> 又触发观察器」的同步死循环。 */

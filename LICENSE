@@ -28,7 +28,11 @@ Character notice
 This plugin is a non-commercial fan work and is not affiliated with or
 endorsed by HoYoverse.
 
-The bundled avatar (assets/avatar.webp) is cropped from a character
-illustration. The original illustration is NOT distributed with this
-repository; tools/make_avatar.py requires you to supply your own source image
-to regenerate it.
+The source images in photo/ (立绘.png, 头像.jpg) are character illustrations
+and remain the property of their rights holders. They are included here so the
+build tools can regenerate assets/ from them. The MIT license above covers the
+plugin's code and documentation only; it grants no rights to the character
+artwork.
+
+If you are a rights holder and want these images removed, open an issue and
+they will be taken out.
