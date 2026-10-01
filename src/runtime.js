@@ -30,7 +30,7 @@
 // ══════════════════════════════════════════════════════════════════════════
 
 const PLUGIN_ID = 'dsh-pardofelis-widget';
-const PLUGIN_VERSION = '1.1.2';
+const PLUGIN_VERSION = '1.2.0';
 
 /** localStorage 键。插件自己的偏好，与 DSH 的设置互不干扰。 */
 const LS_KEY = 'dsh-pardofelis-widget:v1';
@@ -462,6 +462,24 @@ const STYLES = `
 .pw-item-remove:hover { background: var(--pw-hover); color: var(--pw-text); opacity: 1; }
 .pw-item-remove:focus-visible { outline: 2px solid var(--pw-focus); outline-offset: 1px; opacity: 1; }
 
+/* 诊断区（Shift+点悬浮球切换）：等宽小字，长值换行 */
+.pw-diag {
+  flex: 0 0 auto;
+  max-height: 210px;
+  overflow-y: auto;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--pw-border);
+  background: var(--pw-accent-soft);
+  font-size: 10.5px;
+  line-height: 1.65;
+  font-family: var(--dsh-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+}
+.pw-diag-title { font-weight: 600; margin-bottom: 4px; }
+.pw-diag-row { display: flex; gap: 6px; }
+.pw-diag-label { flex: 0 0 46%; color: var(--pw-text-dim); word-break: break-all; }
+.pw-diag-value { flex: 1 1 auto; word-break: break-all; }
+.pw-diag-bad .pw-diag-value { color: #C0392B; font-weight: 600; }
+
 /* 空态与提示 */
 .pw-empty {
   padding: 16px 16px 20px;
@@ -554,12 +572,19 @@ html[data-dsh-pardofelis="${THEME_ATTR_VALUE}"][data-pw-dark="on"] {
  * 染色：把 DSH 的背景族令牌往角色色相（暖砂 / 藕粉 / 靛紫）上偏，
  * 并给一部分加透明度，让下面的壁纸透出来。
  * 每个变量都带 DSH 原值作回退，取不到令牌时行为与未加主题一致。
+ *
+ * ⚠ 不透明度必须按【层数】反推，因为半透明层叠是相乘而不是相加。
+ *   DSH 在对话区实际叠了四层：body -> BynINW_frame -> BynINW_centerCol
+ *   -> Dc7zOa_root，四层各 0.72 叠起来是 1-(0.28^4·0.25) ≈ 99.4% 不透明，
+ *   壁纸等于被完全挡住（这是 v1.1 系列一直「看不到背景」的真正原因）。
+ *   现在每层给 0.28：四层等效 ≈ 0.73，两层（侧栏）≈ 0.48。
+ *   改动这里之前请先重跑 tools/contrast_audit.py。
  */
 html[data-dsh-pardofelis="${THEME_ATTR_VALUE}"] body {
-  --dsw-alias-bg-base: rgba(255, 252, 250, 0.72) !important;
-  --dsw-alias-bg-layer-1: rgba(255, 251, 248, 0.78) !important;
-  --dsw-alias-bg-layer-2: rgba(253, 246, 243, 0.76) !important;
-  --dsw-alias-bg-layer-3: rgba(251, 243, 240, 0.77) !important;
+  --dsw-alias-bg-base: rgba(255, 252, 250, 0.28) !important;
+  --dsw-alias-bg-layer-1: rgba(255, 251, 248, 0.70) !important;
+  --dsw-alias-bg-layer-2: rgba(253, 246, 243, 0.70) !important;
+  --dsw-alias-bg-layer-3: rgba(251, 243, 240, 0.70) !important;
   --dsw-alias-bg-overlay: rgba(255, 252, 250, 0.94) !important;
   --dsw-alias-bg-mask-1: rgba(74, 58, 52, 0.06) !important;
   --dsw-alias-bg-mask-2: rgba(74, 58, 52, 0.10) !important;
@@ -576,13 +601,13 @@ html[data-dsh-pardofelis="${THEME_ATTR_VALUE}"] body {
   --dsw-alias-scrollbar-hover-l2: rgba(152, 132, 121, 0.44) !important;
   /* 侧栏的底。DSH 用 --dsw-specific-* 命名，就是留给主题覆盖的语义槽位；
      不覆盖它侧栏会是一块不透明的 #f9fafb，把左侧的角色整个挡掉。 */
-  --dsw-specific-sidebar-fill: rgba(250, 248, 246, 0.75) !important;
+  --dsw-specific-sidebar-fill: rgba(250, 248, 246, 0.65) !important;
 }
 html[data-dsh-pardofelis="${THEME_ATTR_VALUE}"][data-pw-dark="on"] body {
-  --dsw-alias-bg-base: rgba(30, 28, 36, 0.72) !important;
-  --dsw-alias-bg-layer-1: rgba(36, 33, 42, 0.78) !important;
-  --dsw-alias-bg-layer-2: rgba(41, 38, 48, 0.76) !important;
-  --dsw-alias-bg-layer-3: rgba(46, 42, 54, 0.77) !important;
+  --dsw-alias-bg-base: rgba(30, 28, 36, 0.30) !important;
+  --dsw-alias-bg-layer-1: rgba(36, 33, 42, 0.70) !important;
+  --dsw-alias-bg-layer-2: rgba(41, 38, 48, 0.70) !important;
+  --dsw-alias-bg-layer-3: rgba(46, 42, 54, 0.70) !important;
   --dsw-alias-bg-overlay: rgba(30, 28, 36, 0.94) !important;
   --dsw-alias-bg-mask-1: rgba(0, 0, 0, 0.18) !important;
   --dsw-alias-bg-mask-2: rgba(0, 0, 0, 0.26) !important;
@@ -597,7 +622,7 @@ html[data-dsh-pardofelis="${THEME_ATTR_VALUE}"][data-pw-dark="on"] body {
   --dsw-alias-scrollbar-hover-l1: rgba(212, 178, 166, 0.36) !important;
   --dsw-alias-scrollbar-bg-l2: rgba(212, 178, 166, 0.26) !important;
   --dsw-alias-scrollbar-hover-l2: rgba(212, 178, 166, 0.44) !important;
-  --dsw-specific-sidebar-fill: rgba(32, 30, 38, 0.75) !important;
+  --dsw-specific-sidebar-fill: rgba(32, 30, 38, 0.65) !important;
 }
 `;
 
@@ -671,6 +696,140 @@ function svgEl(tag, attrs, children) {
     node.append(child);
   }
   return node;
+}
+
+/**
+ * 主题诊断：把「为什么背景没生效」需要的事实直接摆进面板。
+ *
+ * 为什么要有它：定位这类问题最直接的办法本来是让用户开控制台、粘一段探针。
+ * 但控制台有粘贴防护、要按特定顺序操作、还容易被输入法换成全角字符——
+ * 一轮轮试下来成本比实现这个还高。读屏看结论比来回粘代码可靠得多。
+ *
+ * 入口刻意做得不显眼但好描述：按住 Shift 点悬浮球。
+ * 全程只读，不改任何东西。
+ */
+function collectDiagnostics() {
+  const rows = [];
+  const add = (label, value, bad) => rows.push({ label, value: String(value), bad: bad === true });
+
+  // 1. 插件自己判定出的明暗档
+  let theme = '?';
+  try {
+    theme = detectTheme();
+  } catch {
+    theme = '读取失败';
+  }
+  add('插件判定明暗档', theme);
+
+  // 2. 主题样式表在不在、html 上的背景图有没有被解析出来
+  const styleTag = document.getElementById(THEME_STYLE_ID);
+  add('主题样式表', styleTag === null ? '未注入' : '已注入', styleTag === null);
+  add('html 主题属性', document.documentElement.getAttribute(HOST_ATTR) ?? '（无）',
+    document.documentElement.getAttribute(HOST_ATTR) === null);
+
+  let bgImage = '读不到';
+  let bgColor = '读不到';
+  try {
+    const computed = window.getComputedStyle(document.documentElement);
+    bgImage = computed.backgroundImage ?? '（空）';
+    bgColor = computed.backgroundColor ?? '（空）';
+  } catch {
+    /* 保持默认值 */
+  }
+  add('html 背景图', bgImage === 'none' || bgImage === '（空）'
+    ? '未设置（被覆盖或被丢弃）'
+    : `已解析，${bgImage.length} 字符`, bgImage === 'none' || bgImage === '（空）');
+  add('html 底色', bgColor);
+
+  // 3. 逐层背景色：从输入框一路向上，找出不透明的那一层
+  const composer = document.querySelector(COMPOSER_SELECTORS.join(','));
+  if (composer === null) {
+    add('页面锚点', '未找到输入框（当前不在对话页？）', true);
+  } else {
+    let node = composer;
+    let depth = 0;
+    let foundOpaque = false;
+    while (node !== null && node !== document.documentElement && depth < 14) {
+      let color = '?';
+      try {
+        color = window.getComputedStyle(node).backgroundColor ?? '?';
+      } catch {
+        /* 忽略 */
+      }
+      const match = color.match(/rgba?\([^)]*?([\d.]+)\s*\)$/);
+      const alpha = match === null ? 1 : Number(match[1]);
+      const opaque = alpha >= 0.95;
+      if (opaque) foundOpaque = true;
+      const name = `${node.tagName.toLowerCase()}${node.id ? '#' + node.id : ''}`
+        + (typeof node.className === 'string' && node.className.length > 0
+          ? '.' + node.className.trim().split(/\s+/).slice(0, 2).join('.') : '');
+      add(`  ${'·'.repeat(1)}第${depth + 1}层 ${name}`,
+        color + (opaque ? '  ←不透明，挡住壁纸' : ''), opaque);
+      node = node.parentElement;
+      depth += 1;
+    }
+    add('逐层扫描结果', foundOpaque ? '存在不透明层（见上）' : '没有不透明层', foundOpaque);
+  }
+
+  // 4. 壁纸图能不能真正加载（这才是「有值但不画」的关键）
+  const probes = [WALLPAPER_LIGHT_URL, WALLPAPER_DARK_URL];
+  const loadable = probes.map(() => '检测中…');
+  add('壁纸图可加载性', loadable.join(' / '));
+  const rowIndex = rows.length - 1;
+  if (typeof Image === 'function') {
+    probes.forEach((url, index) => {
+      const probe = new Image();
+      probe.onload = () => {
+        loadable[index] = `可加载 ${probe.naturalWidth}x${probe.naturalHeight}`;
+        rows[rowIndex].value = loadable.join(' / ');
+        render();
+      };
+      probe.onerror = () => {
+        loadable[index] = '加载失败';
+        rows[rowIndex].value = loadable.join(' / ');
+        rows[rowIndex].bad = true;
+        render();
+      };
+      probe.src = url;
+    });
+  } else {
+    loadable[0] = loadable[1] = '环境不支持检测';
+    rows[rowIndex].value = loadable.join(' / ');
+  }
+
+  // 5. 上下文
+  add('视口', `${window.innerWidth}x${window.innerHeight}`);
+  add('插件版本', PLUGIN_VERSION);
+
+  let container = null;
+  let rowsHost = null;
+  function render() {
+    if (rowsHost === null || !container.isConnected) return;
+    // 只清「行」这一层，别用 container.textContent = ''——那会把标题也一起清掉，
+    // 结果诊断区只剩一堆没有表头的行（踩过一次）。
+    rowsHost.textContent = '';
+    for (const row of rows) {
+      rowsHost.append(el('div', {
+        class: `pw-diag-row${row.bad ? ' pw-diag-bad' : ''}`,
+      }, [
+        el('span', { class: 'pw-diag-label', text: row.label }),
+        el('span', { class: 'pw-diag-value', text: row.value }),
+      ]));
+    }
+  }
+
+  return {
+    attach(parent) {
+      rowsHost = el('div', { class: 'pw-diag-rows' });
+      container = el('div', { class: 'pw-diag' }, [
+        el('div', { class: 'pw-diag-title', text: '主题诊断（只读）' }),
+        rowsHost,
+      ]);
+      parent.append(container);
+      render();
+    },
+    refresh: render,
+  };
 }
 
 /** 行内 SVG 图标。不上传、不请求，纯路径数据。 */
@@ -813,6 +972,8 @@ class PardofelisWidget {
     this.seq = 0;
     this.notice = '';
     this.disposers = [];
+    /** @type {{attach: Function, refresh: Function} | null} 诊断视图，Shift+点切换 */
+    this.diagnostics = null;
     this.urlRegistry = new Map();
     this.ui = {};
 
@@ -951,12 +1112,15 @@ class PardofelisWidget {
         el('div', { text: '点上面的「导入本地音乐」选择音频文件。' }),
         el('div', { text: '支持多选，文件只在这台电脑上播放。' }),
       ]),
+      // 诊断区默认是空的（不占高度）；Shift+点悬浮球才填内容
+      el('div', { class: 'pw-diag-host' }),
     ]);
 
     parent.append(launcher, panel);
 
     this.ui = {
       parent, launcher, panel, fileInput, list,
+      diagHost: panel.querySelector('.pw-diag-host') ?? null,
       progress: progressRange, volume: volumeRange,
       timeCurrent: panel.querySelector('.pw-time-current'),
       timeTotal: panel.querySelector('.pw-time-total'),
@@ -978,7 +1142,14 @@ class PardofelisWidget {
   bindUi() {
     const { ui } = this;
 
-    this.listen(ui.launcher, 'click', () => this.setOpen(!this.isOpen()));
+    this.listen(ui.launcher, 'click', (event) => {
+      // Shift+点：切换主题诊断。入口不显眼，但好描述、也永远不会误触。
+      if (event !== undefined && event !== null && event.shiftKey === true) {
+        this.toggleDiagnostics();
+        return;
+      }
+      this.setOpen(!this.isOpen());
+    });
     this.listen(ui.close, 'click', () => {
       this.setOpen(false);
       ui.launcher.focus();
@@ -1389,6 +1560,26 @@ class PardofelisWidget {
 
     this.renderList();
     this.syncAll();
+  }
+
+  /** Shift+点悬浮球：把主题诊断塞进面板底部；再点一次移除。 */
+  toggleDiagnostics() {
+    const host = this.ui.diagHost;
+    if (host === null || host === undefined) return;
+    if (this.diagnostics !== null && this.diagnostics !== undefined) {
+      host.textContent = '';
+      this.diagnostics = null;
+      return;
+    }
+    this.setOpen(true);
+    try {
+      this.diagnostics = collectDiagnostics();
+      this.diagnostics.attach(host);
+    } catch (error) {
+      host.textContent = '';
+      host.append(el('div', { class: 'pw-diag', text: `诊断读取失败：${error && error.message}` }));
+      this.diagnostics = null;
+    }
   }
 
   setNotice(text) {

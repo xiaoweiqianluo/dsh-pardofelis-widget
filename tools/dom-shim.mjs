@@ -183,6 +183,9 @@ class FakeNode {
 
   attachShadow() {
     const shadow = new FakeShadowRoot(this);
+    // 继承宿主的连接状态：真实 DOM 里 attachShadow 之后，宿主在文档里就意味着
+    // Shadow Root 内的节点也在文档里。
+    markConnected(shadow, this.isConnected);
     this.shadowRoot = shadow;
     return shadow;
   }
@@ -218,6 +221,13 @@ class FakeNode {
 function markConnected(node, connected) {
   node.isConnected = connected;
   for (const child of node.children) markConnected(child, connected);
+  // Shadow Root 不是 children 里的一员，必须单独传播。
+  // 漏掉它的后果很隐蔽：真实浏览器里挂到文档上的宿主，其 Shadow Root 内的
+  // 节点 isConnected 为 true，而仿真里会一直是 false——于是任何
+  // `if (!el.isConnected) return` 的防御性判断都会静默跳过后面的代码。
+  if (node.shadowRoot !== null && node.shadowRoot !== undefined) {
+    markConnected(node.shadowRoot, connected);
+  }
 }
 
 class FakeTextNode {
@@ -386,21 +396,31 @@ export function createEnvironment(options) {
   };
 
   /** 把所有排队的工作跑完：定时器 / rAF / 观察器回调交替执行。 */
+  /**
+   * 把所有排队的工作跑完。
+   *
+   * 必须是有上限的：插件的进度条用 requestAnimationFrame 自排队，只要音频在播
+   * 就会一直排下去。真实浏览器里每帧跑一次是正常的，但仿真里"把队列清空"就成了
+   * 死循环——踩过一次，表现为测试进程挂死。所以跑到上限就返回，剩下的留给下一次
+   * flush；测试都是先 flush 再断言，不会因此漏掉工作。
+   */
   function flush(limit) {
-    const max = limit === undefined ? 2000 : limit;
+    const max = limit === undefined ? 600 : limit;
     let guard = 0;
     for (;;) {
+      if (guard >= max) return;
       if (scheduled.length === 0 && observerQueue.length === 0) return;
-      guard += 1;
-      if (guard > max) throw new Error('flush did not settle: suspected infinite scheduling loop');
-      while (scheduled.length > 0) {
-        const fn = scheduled.shift();
+      const batch = scheduled.splice(0, scheduled.length);
+      for (const fn of batch) {
         fn();
+        guard += 1;
+        if (guard >= max) return;
       }
       if (observerQueue.length > 0) {
         const observer = observerQueue.shift();
         if (!observer.disconnected) observer.callback([], observer);
       }
+      guard += 1;
     }
   }
 

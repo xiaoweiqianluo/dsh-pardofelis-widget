@@ -1,6 +1,6 @@
 # 帕朵菲莉丝主题挂件 · dsh-pardofelis-widget
 
-**v1.1** —— 除了右下角的音乐挂件，整个界面也换成以角色立绘为主题的底色（左侧是角色本体）。
+**v1.2** —— 除了右下角的音乐挂件，整个界面也换成以角色立绘为主题的底色：角色站在偏左位置，左侧清晰、往右渐淡，给正文让路。
 
 给 **DeepSeek Harness** 做的《崩坏：星穹铁道》帕朵菲莉丝（Pardofelis）主题挂件。
 
@@ -160,6 +160,7 @@ dsh plugin --profile desktop remove dsh-pardofelis-widget
 | 切换曲目 | 点播放列表里的任意一项 |
 | 移除曲目 | 点条目右侧的垃圾桶图标 |
 | 切换播放模式 | 点最左边的模式按钮，在顺序 / 单曲循环 / 随机之间轮换 |
+| **主题诊断** | **按住 Shift 点悬浮球** —— 面板底部会列出主题的实际状态（只读） |
 
 按钮有 `aria-label`、可键盘聚焦、有 `:focus-visible` 焦点环；
 面板是 `role="dialog"`，滑杆有各自的 `aria-label`。
@@ -172,8 +173,8 @@ dsh plugin --profile desktop remove dsh-pardofelis-widget
 
 ```bash
 node tools/build.mjs          # 重新打包 bundle/client.js
-node tools/verify.mjs         # 静态自检：118 项
-node tools/test-widget.mjs    # 行为回归：123 项
+node tools/verify.mjs         # 静态自检：109 项
+node tools/test-widget.mjs    # 行为回归：133 项
 ```
 
 `verify.mjs` 核对的是「看一眼源码就能判定」的事实：
@@ -226,7 +227,7 @@ dsh-pardofelis-widget/
 │   ├── dom-shim.mjs       # 最小 DOM 仿真（测试用）
 │   ├── make_avatar.py     # 从源图生成头像 + 配色报告
 │   ├── make_wallpaper.py  # 从立绘合成两档壁纸
-│   ├── contrast_audit.py  # 主题底色的文字对比度审计
+│   ├── contrast_audit.py  # 主题底色的文字对比度审计（按真实层叠建模）
 │   ├── palette-report.txt # 立绘取色报告
 │   ├── install-local.ps1  # DSH Desktop 本地安装
 │   └── test-install.ps1   # 安装脚本演练（临时 profile，不碰真环境）

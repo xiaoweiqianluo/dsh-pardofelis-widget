@@ -81,7 +81,15 @@ function importFiles(env, files) {
 }
 
 const itemNames = (env) => $$(env, '.pw-item-name').map((node) => node.textContent);
-const currentAudio = (env) => env.audioInstances[env.audioInstances.length - 1];
+// 取「当前这个挂件」的播放器。两个坑都不能踩：
+//   · 不能取最后一个——仿真修好 isConnected 之后 hydrateDurations() 会真的跑，
+//     每首曲目都创建一个一次性探测器 Audio，最后那个是探测器。
+//   · 也不能取第一个——「页面边界」那节会离开再回到对话页，挂件被重建过，
+//     第一个是已经释放的旧实例。
+// 可靠的判别：挂件会给自己的 audio 注册 play/pause/ended 监听，探测器只注册
+// loadedmetadata/error，不会注册 play。
+const currentAudio = (env) => [...env.audioInstances].reverse()
+  .find((audio) => audio.listenerCount('play') > 0);
 const tick = () => new Promise((resolve) => { setImmediate(resolve); });
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -185,6 +193,37 @@ async function run() {
   env.mutate();
   env.flush();
   equal('重复调度后仍只有一个宿主节点', env.document.body.querySelectorAll(`#${HOST_ID}`).length, 1);
+
+  section('主题诊断（Shift+点悬浮球）');
+
+  {
+    // 诊断区默认不存在，Shift+点才出现。这条路径在这次的排查里是主力，
+    // 所以要有回归覆盖：它不能抛错、不能污染面板。
+    equal('默认没有诊断区', $(env, '.pw-diag'), null);
+    $(env, '.pw-launcher').dispatch('click', { shiftKey: true });
+    env.flush();
+    const diag = $(env, '.pw-diag');
+    check('Shift+点后出现诊断区', diag !== null);
+    check('诊断区有标题', diag !== null && diag.textContent.includes('主题诊断'));
+    const rows = $$(env, '.pw-diag-row');
+    check('诊断区列出了若干项', rows.length >= 6, `${rows.length} 项`);
+    check('诊断含 html 背景图一行',
+      rows.some((row) => row.textContent.includes('html 背景图')));
+    check('诊断含逐层扫描结论',
+      rows.some((row) => row.textContent.includes('逐层扫描结果')));
+    const openBefore = $(env, '.pw-panel').getAttribute('data-open');
+    equal('诊断会自动展开面板', openBefore, 'true');
+    $(env, '.pw-launcher').dispatch('click', { shiftKey: true });
+    env.flush();
+    equal('再 Shift+点一次收起诊断区', $(env, '.pw-diag'), null);
+    check('收起诊断不影响面板内容', $(env, '.pw-picker') !== null);
+    // 诊断会顺手把面板打开；下一节假定它是收起的，所以这里恢复原状。
+    if ($(env, '.pw-panel').getAttribute('data-open') === 'true') {
+      $(env, '.pw-launcher').dispatch('click');
+      env.flush();
+    }
+    equal('退出诊断后把面板恢复为收起', $(env, '.pw-panel').getAttribute('data-open'), 'false');
+  }
 
   section('面板开合与持久化');
 

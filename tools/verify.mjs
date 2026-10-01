@@ -300,42 +300,30 @@ async function main() {
   section('面层不透明度与对比度审计一致');
 
   {
-    // 面层 alpha 决定壁纸能透出多少，也决定文字对比度。这两个数字分散在两处
-    // （运行时样式表、审计脚本），最容易悄悄漂移，所以在这里强制对齐。
-    // 用字符串解析而不是正则：正则里嵌套括号太容易写错。
-    const audit = await readFile(join(HERE, 'contrast_audit.py'), 'utf8');
+    // 面层 alpha 决定壁纸能透出多少，也决定文字对比度。数字分散在两处
+    // （运行时样式表、审计脚本），最容易悄悄漂移，所以强制对齐。
+    //
+    // 注意：这里比的是【取值集合】而不是逐个令牌对应。原因是层叠结构决定了
+    // 同一个令牌可能出现多次、不同角色给不同 alpha（bg-base 在对话区叠三层），
+    // 逐名对应既脆弱又表达不了真实关系。
     const themeCss = (runtime.match(/const THEME_STYLES = `([\s\S]*?)`;/))?.[1] ?? '';
-    // 令牌前缀不统一：背景族是 --dsw-alias-*，侧栏是 --dsw-specific-*，
-    // 所以按完整令牌名去找，不要拼前缀。
-    const alphaFromTheme = (token) => {
-      const at = themeCss.indexOf(`${token}:`);
-      if (at < 0) return null;
-      const line = themeCss.slice(at, themeCss.indexOf(';', at));
-      const match = line.match(/(0\.\d+)\s*\)/);
-      return match === null ? null : match[1];
-    };
-    const alphaFromAudit = (name) => {
-      const at = audit.indexOf(`("${name}"`);
-      if (at < 0) return null;
-      const line = audit.slice(at, audit.indexOf('\n', at));
-      const match = line.match(/,\s*(0\.\d+)\)\s*,\s*$/);
-      return match === null ? null : match[1];
-    };
-    const tokens = [
-      ['--dsw-alias-bg-base', 'bg-base'],
-      ['--dsw-alias-bg-layer-1', 'bg-layer-1'],
-      ['--dsw-alias-bg-layer-2', 'bg-layer-2'],
-      ['--dsw-alias-bg-layer-3', 'bg-layer-3'],
-      ['--dsw-specific-sidebar-fill', 'specific-sidebar-fill'],
-    ];
-    for (const [token, name] of tokens) {
-      const themeAlpha = alphaFromTheme(token);
-      const auditAlpha = alphaFromAudit(name);
-      check(`两处都写了 ${name} 的 alpha`, themeAlpha !== null && auditAlpha !== null,
-        `theme=${themeAlpha} audit=${auditAlpha}`);
-      check(`${name} 的 alpha 在两处一致`, themeAlpha === auditAlpha,
-        `theme=${themeAlpha} audit=${auditAlpha}`);
-    }
+    // 只统计【面层】令牌：bg-base / bg-layer-* / specific-sidebar-fill。
+    // 遮罩、骨架、overlay 那些和层叠无关，不该进这个集合。
+    const surfaceTokens = '--dsw-alias-bg-base|--dsw-alias-bg-layer-[123]|--dsw-specific-sidebar-fill';
+    const runtimeAlphas = new Set(
+      Array.from(themeCss.matchAll(new RegExp(`(${surfaceTokens}):\\s*rgba\\([^)]*?([0-9.]+)\\)`, 'g')))
+        .map((match) => match[2]),
+    );
+    const audit = await readFile(join(HERE, 'contrast_audit.py'), 'utf8');
+    const auditAlphas = new Set(
+      Array.from(audit.matchAll(/\(\s*\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\)\s*,\s*([0-9.]+)\s*\)/g))
+        .map((match) => match[1]),
+    );
+    // 两个集合应当完全相等：审计覆盖了每个面层取值，运行时也没有审计没建模的取值。
+    const runtimeList = [...runtimeAlphas].sort().join(', ');
+    const auditList = [...auditAlphas].sort().join(', ');
+    check('审计与运行时的面层取值集合一致', runtimeList === auditList,
+      `运行时 [${runtimeList}] vs 审计 [${auditList}]`);
   }
 
   section('内联资源（零请求的前提）');
