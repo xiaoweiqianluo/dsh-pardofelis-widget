@@ -20,7 +20,7 @@ desktop.ini
 tmp/
 .scratch/
 tools/.syntax/
-tools/_probe*
+tools/_*
 
 # Python
 __pycache__/
