@@ -26,7 +26,11 @@
 param(
   [string]$Owner = 'xiaoweiqianluo',
   [string]$Repo = 'dsh-pardofelis-widget',
-  [string]$Branch = 'main'
+  [string]$Branch = 'main',
+  # Move the branch even when the new commit is not a descendant of the current
+  # tip. Needed after amending a commit that has already been published - the
+  # replacement has the same parent but a different SHA.
+  [switch]$Force
 )
 
 $ErrorActionPreference = 'Stop'
@@ -162,7 +166,7 @@ if ($commit.sha -eq $head) {
 
 # --- move the branch --------------------------------------------------------------
 $refBody = Join-Path $scratch 'ref.json'
-Utf8NoBom $refBody (@{ sha = $commit.sha; force = $false } | ConvertTo-Json -Compress)
+Utf8NoBom $refBody (@{ sha = $commit.sha; force = [bool]$Force } | ConvertTo-Json -Compress)
 $ref = ApiJson 'PATCH' ("/repos/" + $Owner + '/' + $Repo + '/git/refs/heads/' + $Branch) $refBody
 Say ('ref         ' + $ref.ref + ' -> ' + $ref.object.sha)
 
