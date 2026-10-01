@@ -1,6 +1,6 @@
 # 帕朵菲莉丝主题挂件 · dsh-pardofelis-widget
 
-**v1.1** —— 除了右下角的音乐挂件，整个界面也换成以角色立绘为主题的底色。
+**v1.1** —— 除了右下角的音乐挂件，整个界面也换成以角色立绘为主题的底色（左侧是角色本体）。
 
 给 **DeepSeek Harness** 做的《崩坏：星穹铁道》帕朵菲莉丝（Pardofelis）主题挂件。
 
@@ -43,8 +43,8 @@
   亮色还是暗色，然后选对应的调色板与壁纸。
 - **背景不动布局**：壁纸挂在 `html` 的伪元素上（根元素的伪元素天然画在 body
   背景之下，不必用 `z-index` 去和任何元素争层级），不新增任何占文档流的节点。
-- **只改颜色令牌，不改文字**：主题只覆盖 DSH 的【背景族】与滚动条令牌
-  （`--dsw-alias-bg-*` / `scrollbar-*` / `interactive-bg-*`），
+- **只改颜色令牌，不改文字**：主题只覆盖 DSH 的【背景族】、滚动条与侧栏令牌
+  （`--dsw-alias-bg-*` / `scrollbar-*` / `interactive-bg-*` / `--dsw-specific-sidebar-fill`），
   正文与次要文字、语义色（成功 / 警告 / 错误）、代码高亮一律不碰——
   那些一改就得重新证明对比度，而且会丢语义。
 
@@ -172,7 +172,7 @@ dsh plugin --profile desktop remove dsh-pardofelis-widget
 
 ```bash
 node tools/build.mjs          # 重新打包 bundle/client.js
-node tools/verify.mjs         # 静态自检：102 项
+node tools/verify.mjs         # 静态自检：118 项
 node tools/test-widget.mjs    # 行为回归：123 项
 ```
 
@@ -226,6 +226,7 @@ dsh-pardofelis-widget/
 │   ├── dom-shim.mjs       # 最小 DOM 仿真（测试用）
 │   ├── make_avatar.py     # 从源图生成头像 + 配色报告
 │   ├── make_wallpaper.py  # 从立绘合成两档壁纸
+│   ├── contrast_audit.py  # 主题底色的文字对比度审计
 │   ├── palette-report.txt # 立绘取色报告
 │   ├── install-local.ps1  # DSH Desktop 本地安装
 │   └── test-install.ps1   # 安装脚本演练（临时 profile，不碰真环境）

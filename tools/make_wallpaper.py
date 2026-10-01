@@ -42,22 +42,31 @@ WASH_BLUR_RATIO = 0.07         # 相对短边
 WASH_SATURATION = 0.85
 
 # ── 角色层 ───────────────────────────────────────────────────────────────
-FIGURE_HEIGHT_RATIO = 1.25     # 相对壁纸高度；脚部出画面（放大以补回降低的不透明度）
-FIGURE_CENTER_X = 0.30         # 0.5 为正中央，0.30 即「偏左、但不贴边」
+FIGURE_HEIGHT_RATIO = 1.15     # 相对壁纸高度；脚部出画面（放大以补回降低的不透明度）
+FIGURE_CENTER_X = 0.27         # 0.5 为正中央，0.30 即「偏左、但不贴边」
 # 亮色档角色压到 0.13：角色的深色轮廓一旦落进正文区，即使是细线也会把局部
 # 对比度拖下来。暗色档底子深，可以稍明显一点。
-FIGURE_OPACITY = {"light": 0.11, "dark": 0.15}
-# 角色右侧的横向渐隐：越靠右越淡。角色的深色衣料在右半边会成片压在正文下面，
-# 单纯调低整体不透明度救不回来（实测最坏局部均值只有 4.0:1），
-# 让右半边淡出才能既保住角色的存在感、又把正文底子留在浅色档。
-# 三条控制点：(x 比例, 不透明度系数)，必须按 x 递增。
-FIGURE_FADE = [(0.00, 1.00), (0.45, 0.85), (0.68, 0.12), (1.00, 0.04)]
+FIGURE_OPACITY = {"light": 0.32, "dark": 0.38}
+# 横向渐隐控制点：(x 比例, 不透明度系数)，按 x 递增，用来把角色局部压淡。
+# 现在设成「整幅都不衰减」：试过让右半边渐隐以保住正文底子，但那样角色的
+# 右半身被擦掉，只剩一条竖片，看着不像一个角色。改成整体压低不透明度，
+# 角色完整，辨识度靠下面的轻微锐化来找。
+FIGURE_FADE = [(0.00, 1.00), (1.00, 1.00)]
+
+# 角色层的轻微锐化。人眼判断"这是不是一个角色"靠的是轮廓边缘，而细边缘在
+# 【文字尺度的局部均值】上几乎不占对比度预算——所以拿锐化换辨识度，
+# 比单纯提高不透明度划算得多。
+FIGURE_UNSHARP = dict(radius=2.0, percent=90, threshold=2)
 
 # ── 底色与压暗 ───────────────────────────────────────────────────────────
 BASE_COLOR = {"light": (255, 252, 250), "dark": (30, 28, 36)}
 # 暗色档的色域要压过亮度、并降低不透明度再用，否则一层亮色薄雾会把暗底提灰，
-# 深色底上的浅色文字对比度会掉下来（AI 的正文对比度目标是 AAA，≥7:1）。
-WASH_OPACITY = {"light": 0.14, "dark": 0.18}
+# 深色底上的浅色文字对比度会掉下来（正文对比度目标是 AAA，≥7:1）。
+#
+# 色域只给 0.10 / 0.12：它会在正文列里**均匀**压暗，是最占对比度预算的一项；
+# 而角色只压暗局部。实测在次要文字 4.5:1 的红线下，低色域 + 高角色
+# 能把角色的有效可见度做到约 10%，比高色域 + 低角色明显得多。
+WASH_OPACITY = {"light": 0.10, "dark": 0.12}
 WASH_DARK_BRIGHTNESS = 0.3
 DARK_BRIGHTNESS = 0.42         # 暗色档对角色本身的亮度压制（压暗，不是反相）
 
@@ -163,18 +172,20 @@ def compose(mode: str, illustration: Image.Image, figure: Image.Image) -> Image.
     wash = wash_layer(illustration, mode)
     base.alpha_composite(wash)
 
-    # 2. 角色。先按目标高度缩一次，暗色档在这个尺寸上做亮度压制，
-    #    再套用一次 alpha 缩放——注意不能对已经压过亮度的图取 alpha，
-    #    那样会把压制过的像素当成遮罩用错。
+    # 2. 角色。顺序很重要：
+    #    缩放 -> 锐化 -> （暗色档压暗）-> 按不透明度压 alpha -> 渐变 -> 合成。
+    #    注意不能对已经压过亮度的图取 alpha 通道当遮罩，那样会拿压过的像素用错。
     fig = scaled_figure(figure, round(SIZE[1] * FIGURE_HEIGHT_RATIO))
+    if FIGURE_UNSHARP is not None:
+        sharpened = fig.convert("RGB").filter(ImageFilter.UnsharpMask(**FIGURE_UNSHARP)).convert("RGBA")
+        sharpened.putalpha(fig.getchannel("A"))
+        fig = sharpened
     if mode == "dark":
         brightness_adjusted = ImageEnhance.Brightness(fig.convert("RGB")).enhance(DARK_BRIGHTNESS).convert("RGBA")
         brightness_adjusted.putalpha(fig.getchannel("A"))
         fig = brightness_adjusted
     fig.putalpha(fig.getchannel("A").point(lambda v: round(v * FIGURE_OPACITY[mode])))
-    # 右侧渐隐：把角色的重色收在左半边
-    faded = apply_horizontal_fade(fig.getchannel("A"), FIGURE_FADE)
-    fig.putalpha(faded)
+    fig.putalpha(apply_horizontal_fade(fig.getchannel("A"), FIGURE_FADE))
     base.alpha_composite(fig, (round(SIZE[0] * FIGURE_CENTER_X) - fig.width // 2, 0))
 
     return base.convert("RGB")

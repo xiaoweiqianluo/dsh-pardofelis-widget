@@ -271,6 +271,16 @@ async function main() {
       check('主题只覆盖令牌值，不含任何布局属性',
         !/(^|[;{\s])(display|flex|grid|position|width|height|margin|padding)\s*:/.test(theme));
       check('暗色档壁纸由 html 上的标记切换', /\[data-pw-dark="on"\]/.test(theme));
+
+      // ── 这次的回归守卫 ────────────────────────────────────────────────
+      // v1.1.0 的壁纸规则里只有 background-color 带 !important，
+      // background-image 没带，被 DSH 自己的 html 规则用 background 简写抹掉：
+      // 底色生效、壁纸没画上，界面看起来像"主题没生效"。
+      for (const prop of ['background-color', 'background-image', 'background-size',
+        'background-position', 'background-repeat', 'background-attachment']) {
+        const pattern = new RegExp(`${prop}:[^;]*!important`);
+        check(`html 上的 ${prop} 带 !important（否则会被 DSH 的简写覆盖）`, pattern.test(theme));
+      }
     }
     check('壁纸以变量注入，且两个槽位都在', /--pw-wallpaper-light/.test(runtime) && /--pw-wallpaper-dark/.test(runtime));
     check('主题样式表有稳定 id（幂等注入依赖它）', /const THEME_STYLE_ID = '/.test(runtime));
@@ -278,6 +288,47 @@ async function main() {
     check('卸载时会摘除 html 上的主题属性',
       /documentElement\.removeAttribute\(HOST_ATTR\)/.test(runtime));
     check('主题在首个 effect 里注入（不依赖对话页）', /installDocumentTheme\(\);/.test(runtime));
+  }
+
+  section('面层不透明度与对比度审计一致');
+
+  {
+    // 面层 alpha 决定壁纸能透出多少，也决定文字对比度。这两个数字分散在两处
+    // （运行时样式表、审计脚本），最容易悄悄漂移，所以在这里强制对齐。
+    // 用字符串解析而不是正则：正则里嵌套括号太容易写错。
+    const audit = await readFile(join(HERE, 'contrast_audit.py'), 'utf8');
+    const themeCss = (runtime.match(/const THEME_STYLES = `([\s\S]*?)`;/))?.[1] ?? '';
+    // 令牌前缀不统一：背景族是 --dsw-alias-*，侧栏是 --dsw-specific-*，
+    // 所以按完整令牌名去找，不要拼前缀。
+    const alphaFromTheme = (token) => {
+      const at = themeCss.indexOf(`${token}:`);
+      if (at < 0) return null;
+      const line = themeCss.slice(at, themeCss.indexOf(';', at));
+      const match = line.match(/(0\.\d+)\s*\)/);
+      return match === null ? null : match[1];
+    };
+    const alphaFromAudit = (name) => {
+      const at = audit.indexOf(`("${name}"`);
+      if (at < 0) return null;
+      const line = audit.slice(at, audit.indexOf('\n', at));
+      const match = line.match(/,\s*(0\.\d+)\)\s*,\s*$/);
+      return match === null ? null : match[1];
+    };
+    const tokens = [
+      ['--dsw-alias-bg-base', 'bg-base'],
+      ['--dsw-alias-bg-layer-1', 'bg-layer-1'],
+      ['--dsw-alias-bg-layer-2', 'bg-layer-2'],
+      ['--dsw-alias-bg-layer-3', 'bg-layer-3'],
+      ['--dsw-specific-sidebar-fill', 'specific-sidebar-fill'],
+    ];
+    for (const [token, name] of tokens) {
+      const themeAlpha = alphaFromTheme(token);
+      const auditAlpha = alphaFromAudit(name);
+      check(`两处都写了 ${name} 的 alpha`, themeAlpha !== null && auditAlpha !== null,
+        `theme=${themeAlpha} audit=${auditAlpha}`);
+      check(`${name} 的 alpha 在两处一致`, themeAlpha === auditAlpha,
+        `theme=${themeAlpha} audit=${auditAlpha}`);
+    }
   }
 
   section('内联资源（零请求的前提）');

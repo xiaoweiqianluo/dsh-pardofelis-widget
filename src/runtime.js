@@ -30,7 +30,7 @@
 // ══════════════════════════════════════════════════════════════════════════
 
 const PLUGIN_ID = 'dsh-pardofelis-widget';
-const PLUGIN_VERSION = '1.1.0';
+const PLUGIN_VERSION = '1.1.1';
 
 /** localStorage 键。插件自己的偏好，与 DSH 的设置互不干扰。 */
 const LS_KEY = 'dsh-pardofelis-widget:v1';
@@ -533,16 +533,19 @@ const THEME_ATTR_VALUE = 'on';
 
 const THEME_STYLES = `
 html[data-dsh-pardofelis="${THEME_ATTR_VALUE}"] {
+  /* 这五条全部要 !important。曾经只有 background-color 带，结果 DSH 自己的
+     html 规则用 background 简写把 background-image 抹掉——底色生效了、
+     壁纸却没画上去，看起来就像"主题没生效"。 */
   background-color: #FFFCFA !important;
-  background-image: var(--pw-wallpaper-light);
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  background-attachment: fixed;
+  background-image: var(--pw-wallpaper-light) !important;
+  background-size: cover !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+  background-attachment: fixed !important;
 }
 html[data-dsh-pardofelis="${THEME_ATTR_VALUE}"][data-pw-dark="on"] {
   background-color: #1E1C24 !important;
-  background-image: var(--pw-wallpaper-dark);
+  background-image: var(--pw-wallpaper-dark) !important;
 }
 
 /*
@@ -551,10 +554,10 @@ html[data-dsh-pardofelis="${THEME_ATTR_VALUE}"][data-pw-dark="on"] {
  * 每个变量都带 DSH 原值作回退，取不到令牌时行为与未加主题一致。
  */
 html[data-dsh-pardofelis="${THEME_ATTR_VALUE}"] body {
-  --dsw-alias-bg-base: rgba(255, 252, 250, 0.80) !important;
-  --dsw-alias-bg-layer-1: rgba(255, 251, 248, 0.88) !important;
-  --dsw-alias-bg-layer-2: rgba(253, 246, 243, 0.83) !important;
-  --dsw-alias-bg-layer-3: rgba(251, 243, 240, 0.78) !important;
+  --dsw-alias-bg-base: rgba(255, 252, 250, 0.72) !important;
+  --dsw-alias-bg-layer-1: rgba(255, 251, 248, 0.78) !important;
+  --dsw-alias-bg-layer-2: rgba(253, 246, 243, 0.76) !important;
+  --dsw-alias-bg-layer-3: rgba(251, 243, 240, 0.77) !important;
   --dsw-alias-bg-overlay: rgba(255, 252, 250, 0.94) !important;
   --dsw-alias-bg-mask-1: rgba(74, 58, 52, 0.06) !important;
   --dsw-alias-bg-mask-2: rgba(74, 58, 52, 0.10) !important;
@@ -569,12 +572,15 @@ html[data-dsh-pardofelis="${THEME_ATTR_VALUE}"] body {
   --dsw-alias-scrollbar-hover-l1: rgba(152, 132, 121, 0.36) !important;
   --dsw-alias-scrollbar-bg-l2: rgba(152, 132, 121, 0.26) !important;
   --dsw-alias-scrollbar-hover-l2: rgba(152, 132, 121, 0.44) !important;
+  /* 侧栏的底。DSH 用 --dsw-specific-* 命名，就是留给主题覆盖的语义槽位；
+     不覆盖它侧栏会是一块不透明的 #f9fafb，把左侧的角色整个挡掉。 */
+  --dsw-specific-sidebar-fill: rgba(250, 248, 246, 0.75) !important;
 }
 html[data-dsh-pardofelis="${THEME_ATTR_VALUE}"][data-pw-dark="on"] body {
-  --dsw-alias-bg-base: rgba(30, 28, 36, 0.74) !important;
-  --dsw-alias-bg-layer-1: rgba(36, 33, 42, 0.86) !important;
-  --dsw-alias-bg-layer-2: rgba(41, 38, 48, 0.82) !important;
-  --dsw-alias-bg-layer-3: rgba(46, 42, 54, 0.78) !important;
+  --dsw-alias-bg-base: rgba(30, 28, 36, 0.72) !important;
+  --dsw-alias-bg-layer-1: rgba(36, 33, 42, 0.78) !important;
+  --dsw-alias-bg-layer-2: rgba(41, 38, 48, 0.76) !important;
+  --dsw-alias-bg-layer-3: rgba(46, 42, 54, 0.77) !important;
   --dsw-alias-bg-overlay: rgba(30, 28, 36, 0.94) !important;
   --dsw-alias-bg-mask-1: rgba(0, 0, 0, 0.18) !important;
   --dsw-alias-bg-mask-2: rgba(0, 0, 0, 0.26) !important;
@@ -589,6 +595,7 @@ html[data-dsh-pardofelis="${THEME_ATTR_VALUE}"][data-pw-dark="on"] body {
   --dsw-alias-scrollbar-hover-l1: rgba(212, 178, 166, 0.36) !important;
   --dsw-alias-scrollbar-bg-l2: rgba(212, 178, 166, 0.26) !important;
   --dsw-alias-scrollbar-hover-l2: rgba(212, 178, 166, 0.44) !important;
+  --dsw-specific-sidebar-fill: rgba(32, 30, 38, 0.75) !important;
 }
 `;
 
