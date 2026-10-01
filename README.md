@@ -77,7 +77,7 @@ dsh plugin --profile desktop add github:<你的账号>/dsh-pardofelis-widget
 
 （`--profile desktop` 指的是 DSH 的 profile 名字，不是「只装给桌面端」。）
 
-### DSH Desktop 手动安装（没有 `dsh` 命令时）
+### DSH Desktop 本地安装（没有 `dsh` 命令时）
 
 1. **完全退出 DSH Desktop**（托盘图标 → 退出）
 2. 右键 `tools\install-local.ps1` →「使用 PowerShell 运行」
@@ -85,6 +85,22 @@ dsh plugin --profile desktop add github:<你的账号>/dsh-pardofelis-widget
 
 脚本会先确认 DSH 已退出、备份 profile 配置，再安装并逐项校验。
 任一步失败都会停下并回滚，同时打印手动回滚命令。
+
+安装有两条路径，脚本自动选：
+
+- **pnpm 可用时**先走 pnpm（`pnpm --dir <profile> add`），这是官方路径，
+  也会同步 lockfile；
+- **pnpm 跑不通时**（受限环境、pnpm 内部调用 git 被拒等）自动改用
+  「清单登记 + 目录联接」：把插件复制/链接到 profile 内，写进
+  `dependencies` 与 `dsh.profile.bundles`，并在 `node_modules` 下建一个指向它的
+  目录联接。效果与 pnpm 安装等价，只是少一条 lockfile 记录。
+
+两条路径完成后都跑同样的五步校验（依赖已登记 / 包能解析 / 声明了
+`dsh.bundle.patch` / 两半都在 / bundle 列表含本插件）。
+
+> 想先看不装？用 `tools\test-install.ps1` 演练：它把当前 profile 的清单复制到
+> 仓库内的 `.scratch`，用 `-ProfileDir` 指向那份副本跑真正的安装脚本，
+> **完全不碰真实 profile**，也不要求 DSH 退出。
 
 ### 装好了但界面没变？
 
@@ -190,7 +206,8 @@ dsh-pardofelis-widget/
 │   ├── dom-shim.mjs       # 最小 DOM 仿真（测试用）
 │   ├── make_avatar.py     # 从立绘生成头像 + 配色报告
 │   ├── palette-report.txt # 立绘取色报告
-│   └── install-local.ps1  # DSH Desktop 本地安装
+│   ├── install-local.ps1  # DSH Desktop 本地安装
+│   └── test-install.ps1   # 安装脚本演练（临时 profile，不碰真环境）
 ├── package.json
 ├── cordis.patch.yml
 ├── DESIGN.md              # 配色推导与选择器策略

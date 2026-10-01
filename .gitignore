@@ -18,6 +18,7 @@ desktop.ini
 *.log
 *.tmp
 tmp/
+.scratch/
 tools/.syntax/
 tools/_probe*
 

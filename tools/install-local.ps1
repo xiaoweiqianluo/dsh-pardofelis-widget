@@ -1,86 +1,168 @@
 # ============================================================================
-#  dsh-pardofelis-widget - DSH Desktop 本地安装脚本（Windows）
+#  dsh-pardofelis-widget - local installer for DSH Desktop (Windows)
 #
-#  用法
-#    右键本文件 ->「使用 PowerShell 运行」
-#    或：powershell -ExecutionPolicy Bypass -File "<本文件路径>"
+#  USAGE
+#    Right-click this file -> "Run with PowerShell"
+#    or:  powershell -ExecutionPolicy Bypass -File "<path to this file>"
 #
-#  这个脚本做什么
-#    1. 等待 DSH Desktop 完全退出。安装会重写 profile 的 node_modules，
-#       DSH 运行期间读取它是不安全的。PowerShell 窗口独立于 DSH，
-#       退出 DSH 不会关掉本窗口 —— 回到这里按回车即可继续。
-#    2. 备份 profile 的 package.json 与 pnpm-lock.yaml。
-#    3. 把插件目录链接到 <profile>\vendor\ 下，再执行
-#         pnpm add "file:./vendor/dsh-pardofelis-widget"
-#    4. 校验依赖已登记、包能解析、并声明了 dsh.bundle.patch 且两半都在。
-#    5. 若 pnpm 本身失败，从备份还原 package.json 与 pnpm-lock.yaml，
-#       并移除半个链接的 node_modules 条目，保证失败不留残留。
-#       pnpm 一旦成功就不再回滚清单 —— 回滚会让 node_modules 变成孤儿，
-#       比「校验失败」更糟。
+#  WHAT IT DOES
+#    1. Waits until DSH Desktop is fully closed. The install rewrites the
+#       profile's node_modules, which is unsafe while DSH is reading it.
+#       A PowerShell window is independent of DSH, so quitting DSH does NOT
+#       close this window - come back here and press Enter.
+#    2. Backs up the profile's package.json and pnpm-lock.yaml.
+#    3. Puts the plugin where pnpm can reach it and runs
+#         pnpm --dir <profile> add <spec>
+#    4. Verifies the dependency is registered, the package resolves, and it
+#       declares dsh.bundle.patch with both halves present.
+#    5. If pnpm itself fails, restores package.json and pnpm-lock.yaml from the
+#       backups. Once pnpm SUCCEEDS the manifest is never rolled back - doing
+#       that would orphan node_modules and end up worse than the failure that
+#       triggered it.
 #
-#  为什么用相对 spec
-#    pnpm 会把 file: 说明符拼到 profile 目录上，而不是当成绝对路径
-#    （path.join 不认第二个参数里的 Windows 盘符）。传绝对路径会得到
-#      ENOENT scandir 'C:\...\profiles\desktop\F:\<插件目录>'
-#    相对说明符不会被误读，但它必须与 profile 同盘（C:），而仓库常常在别的盘。
-#    于是先在 profile 内建一个目录联接（junction）把两边接上 ——
-#    与符号链接不同，junction 不需要管理员权限。
+#  WHY THIS FILE IS ASCII-ONLY
+#    Windows PowerShell 5.1 mis-decodes non-ASCII text in a script unless the
+#    encoding happens to match its ANSI code page, and the failure mode is a
+#    confusing "Unexpected token '}'" parse error rather than anything about
+#    encodings. Keeping every byte ASCII sidesteps the whole class of problem.
+#    (Measured on this machine: a UTF-8 BOM was NOT enough.)
 #
-#  两个 PowerShell 陷阱
-#    1. 本文件刻意只用 ASCII。Windows PowerShell 5.1 会把无 BOM 的 UTF-8
-#       脚本按 ANSI 读取，非 ASCII 文本会变成乱码，硬编码的非 ASCII 路径
-#       会直接失效。插件目录由本脚本自身位置推导，因此不需要写中文路径。
-#    2. 每个 JSON 文件都用 [System.IO.File]::ReadAllText 配显式 UTF-8 读取。
-#       Get-Content -Raw 对无 BOM 的 UTF-8 会用 ANSI 代码页，会把插件描述里的
-#       中文变成乱码、破坏引号，最终让 ConvertFrom-Json 抛错。
+#  WHY pnpm IS INVOKED THROUGH node.exe
+#    Windows PowerShell 5.1 has no file association for .cjs / .mjs, so
+#    `& pnpm.cjs` fails silently - $LASTEXITCODE does not even change.
+#    Invoking `node <pnpm> ...` is deterministic on every machine.
+#
+#  WHY THE SPEC IS RELATIVE
+#    pnpm resolves a `file:` spec against the profile directory, and
+#    path.join ignores a Windows drive letter in its second argument. Passing
+#    an absolute path produced:
+#      ENOENT scandir 'C:\...\profiles\desktop\F:\<plugin folder>'
+#    A spec that points outside the profile tree is handled inconsistently by
+#    pnpm (it can fall back to git resolution), so the reliable strategy is:
+#      - if the plugin already lives inside the profile, reference it directly
+#      - otherwise copy it into <profile>\vendor\<pkg> and reference that
+#    The second form is self-contained: moving or deleting the repo afterwards
+#    does not break the installed plugin.
 # ============================================================================
 
 param(
-  # 跳过所有交互，遇到问题直接失败。用于自动化检查。
-  [switch]$Unattended
+  # Skip every prompt and fail fast instead of waiting. For automated checks.
+  [switch]$Unattended,
+  # Skip the "DSH must be closed" gate. For the scratch-profile dry run in
+  # tools/test-install.ps1, which never touches the live profile.
+  # Never use this against the profile a running DSH is reading.
+  [switch]$SkipProcessCheck,
+  # Always install from a copy inside <profile>\vendor. Only used by the dry
+  # run, to exercise that code path deterministically.
+  [switch]$ForceVendorCopy,
+  # Install into this profile directory instead of the DSH_HOME-derived one.
+  [string]$ProfileDir
 )
 
 $ErrorActionPreference = 'Stop'
 
+$script:logDisabled = $false
 $logPath = Join-Path $env:TEMP ('dsh-pardofelis-install-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.log')
 
+# Write to the console always; mirror to a log file when that is possible
+# (a restricted environment may not allow writes outside the workspace).
 function Log($m) {
   Write-Host $m
-  try { Add-Content -LiteralPath $logPath -Value $m -ErrorAction SilentlyContinue } catch { }
+  if ($script:logDisabled) { return }
+  try {
+    Add-Content -LiteralPath $logPath -Value $m -ErrorAction Stop
+  } catch {
+    $script:logDisabled = $true
+    Write-Host ('  [note] cannot write the log file (' + $logPath + '); continuing without it')
+  }
 }
 function Ok($m)   { Log ('  [ok]   ' + $m) }
 function Step($m) { Log ''; Log $m }
 function Die($m)  { throw $m }
 
-# 无论有无 BOM 都按 UTF-8 读 JSON
+# Read JSON as UTF-8 regardless of BOM. Get-Content -Raw would use the ANSI code
+# page for a BOM-less UTF-8 file and break on the plugin's non-ASCII description.
 function Read-Json($path) {
   return ([System.IO.File]::ReadAllText($path, [System.Text.Encoding]::UTF8) | ConvertFrom-Json)
 }
 
 $pluginDir = Split-Path -Parent $PSScriptRoot
 $pkgName   = 'dsh-pardofelis-widget'
+$sep       = [char]92   # backslash, written as a char to avoid escape confusion
 
-# profile 目录：优先 DSH_HOME 环境变量，否则用默认的 %USERPROFILE%\.dsh
+# Target profile: DSH_HOME / DSH_PROFILE when set, otherwise the defaults.
 $dshHome = $env:DSH_HOME
 if ([string]::IsNullOrWhiteSpace($dshHome)) { $dshHome = Join-Path $env:USERPROFILE '.dsh' }
 $profileName = $env:DSH_PROFILE
 if ([string]::IsNullOrWhiteSpace($profileName)) { $profileName = 'desktop' }
-$prof = Join-Path $dshHome ('profiles\' + $profileName)
+$prof = Join-Path (Join-Path $dshHome 'profiles') $profileName
+if (-not [string]::IsNullOrWhiteSpace($ProfileDir)) { $prof = $ProfileDir }
 
-# pnpm：优先用 DSH 自带的运行时
+# pnpm: prefer the runtime bundled with DSH, then the desktop shim, then PATH.
 $pnpmCandidates = @(
   (Join-Path $dshHome 'dsh-runtimes\dsh-primary-runtime\dependencies\pnpm\bin\pnpm.mjs'),
-  (Join-Path $prof '.desktop-bin\pnpm.cmd')
+  (Join-Path $prof '.desktop-bin\pnpm.cmd'),
+  (Join-Path $dshHome '.desktop-bin\pnpm.cmd'),
+  (Join-Path $env:LOCALAPPDATA 'Programs\DeepSeek Harness\resources\runtime\pnpm\bin\pnpm.cjs'),
+  (Join-Path $env:LOCALAPPDATA 'Programs\DeepSeek Harness\resources\runtime\pnpm\bin\pnpm.mjs')
 )
 $pnpm = $null
 foreach ($candidate in $pnpmCandidates) {
   if (Test-Path $candidate) { $pnpm = $candidate; break }
 }
+if ($null -eq $pnpm) {
+  $onPath = Get-Command pnpm -ErrorAction SilentlyContinue
+  if ($null -ne $onPath) { $pnpm = $onPath.Source }
+}
+
+# node.exe: used to invoke pnpm (see the header).
+$nodeExe = $null
+$nodeCandidates = @(
+  (Join-Path $dshHome 'dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe'),
+  (Join-Path $env:LOCALAPPDATA 'Programs\DeepSeek Harness\resources\runtime\bin\node.exe')
+)
+foreach ($candidate in $nodeCandidates) {
+  if (Test-Path $candidate) { $nodeExe = $candidate; break }
+}
+if ($null -eq $nodeExe) {
+  $onPath = Get-Command node -ErrorAction SilentlyContinue
+  if ($null -ne $onPath) { $nodeExe = $onPath.Source }
+}
+
+# Express $target relative to $root, using ..\ hops when needed.
+# Not [System.IO.Path]::GetRelativePath: Windows PowerShell 5.1 runs on .NET
+# Framework, which does not have it (that method arrived in .NET Core 2.0).
+function Get-RelativePath($root, $target) {
+  if ($target.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) {
+    return $target.Substring($root.Length).TrimStart($sep)
+  }
+  $up = 0
+  $cursor = $root
+  while (-not $target.StartsWith($cursor, [System.StringComparison]::OrdinalIgnoreCase)) {
+    $parent = Split-Path -Parent $cursor
+    if ([string]::IsNullOrWhiteSpace($parent) -or $parent -eq $cursor) { return $null }
+    $cursor = $parent
+    $up += 1
+  }
+  $tail = $target.Substring($cursor.Length).TrimStart($sep)
+  $prefix = (@('..') * $up) -join '/'
+  if ([string]::IsNullOrWhiteSpace($tail)) { return $prefix }
+  return $prefix + '/' + ($tail -replace '\\', '/')
+}
+
+# Remove a path if it exists. Test-Path throws on an empty string in 5.1.
+function Remove-PathQuietly {
+  param([string]$Target)
+  if ([string]::IsNullOrWhiteSpace($Target)) { return }
+  if (Test-Path -LiteralPath $Target) {
+    Remove-Item -LiteralPath $Target -Recurse -Force -ErrorAction SilentlyContinue
+    Log ('  removed ' + $Target)
+  }
+}
 
 $stamp     = Get-Date -Format 'yyyyMMdd-HHmmss'
 $backedUp  = $false
 $installed = $false
-$failure   = $null
 
 function Get-DshProcesses {
   @(Get-Process -ErrorAction SilentlyContinue |
@@ -110,17 +192,9 @@ function Restore-Backups {
       Log ('  restored ' + $f + ' from the backup taken before this run')
     }
   }
-  # pnpm 可能留下半个链接，清掉，让重跑从干净状态开始
-  $entry = Join-Path $prof ('node_modules\' + $pkgName)
-  if (Test-Path $entry) {
-    Remove-Item $entry -Recurse -Force -ErrorAction SilentlyContinue
-    Log ('  removed the half-linked ' + $entry)
-  }
-  $vendor = Join-Path $prof ('vendor\' + $pkgName)
-  if (Test-Path $vendor) {
-    Remove-Item $vendor -Recurse -Force -ErrorAction SilentlyContinue
-    Log ('  removed the vendor junction ' + $vendor)
-  }
+  # pnpm may have left a half-linked entry; drop it so a re-run starts clean.
+  Remove-PathQuietly (Join-Path $prof ('node_modules\' + $pkgName))
+  Remove-PathQuietly (Join-Path $prof ('vendor\' + $pkgName))
 }
 
 try {
@@ -146,10 +220,19 @@ try {
   }
   Ok ('profile  ' + $prof)
   Ok ('pnpm     ' + $pnpm)
+  if ([string]::IsNullOrWhiteSpace($nodeExe)) {
+    Log '  [warn] node.exe not found; falling back to invoking pnpm directly'
+  } else {
+    Ok ('node     ' + $nodeExe)
+  }
 
   Step '3/5  making sure DSH is closed'
-  WaitForDshClosed
-  Ok 'DSH is not running'
+  if ($SkipProcessCheck) {
+    Log '  [warn] -SkipProcessCheck: skipping the DSH process gate (dry run only)'
+  } else {
+    WaitForDshClosed
+    Ok 'DSH is not running'
+  }
 
   Step '4/5  installing'
   foreach ($f in @('package.json', 'pnpm-lock.yaml')) {
@@ -161,28 +244,150 @@ try {
   }
   if ($backedUp) { Ok ('backed up package.json / pnpm-lock.yaml (suffix .bak-' + $stamp + ')') }
 
-  # 在 profile 内建 junction，指向真实插件目录，然后把相对 spec 交给 pnpm
+  $profRoot = (Resolve-Path -LiteralPath $prof).Path.TrimEnd($sep)
+  $pluginFull = (Resolve-Path -LiteralPath $pluginDir).Path.TrimEnd($sep)
+  Log ('  profile root : ' + $profRoot)
+  Log ('  plugin root  : ' + $pluginFull)
+
   $vendor = Join-Path $prof ('vendor\' + $pkgName)
-  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $vendor) | Out-Null
-  if (Test-Path $vendor) { Remove-Item $vendor -Recurse -Force }
-  New-Item -ItemType Junction -Path $vendor -Target $pluginDir | Out-Null
-  Ok ('linked ' + $vendor + ' -> ' + $pluginDir)
 
-  $spec = 'file:./vendor/' + $pkgName
-  $pnpmArgs = @()
-  if ($pnpm.EndsWith('.mjs')) {
-    $pnpmArgs += $pnpm
-    $pnpmCmd = 'node'
-  } else {
-    $pnpmCmd = $pnpm
+  function Copy-PluginInto($Destination) {
+    New-Item -ItemType Directory -Force -Path $Destination | Out-Null
+    foreach ($item in @('package.json', 'cordis.patch.yml', 'README.md', 'LICENSE', 'DESIGN.md', 'bundle', 'assets', 'src', 'tools')) {
+      $from = Join-Path $pluginFull $item
+      if (Test-Path -LiteralPath $from) {
+        Copy-Item -LiteralPath $from -Destination $Destination -Recurse -Force
+      }
+    }
+    # Drop any .git that came along with a directory copy. Its presence makes
+    # pnpm treat the dependency as a git checkout and shell out to `git init`,
+    # which fails outright in a restricted environment.
+    Get-ChildItem -LiteralPath $Destination -Recurse -Force -Directory -ErrorAction SilentlyContinue |
+      Where-Object { $_.Name -eq '.git' } |
+      ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
+    Log ('  copied the plugin into ' + $Destination)
   }
-  $pnpmArgs += @('--dir', $prof, 'add', $spec)
 
-  Log ('  running: ' + $pnpmCmd + ' ' + ($pnpmArgs -join ' '))
-  & $pnpmCmd @pnpmArgs 2>&1 | ForEach-Object { Log ('    ' + $_) }
-  if ($LASTEXITCODE -ne 0) { Die ('pnpm exited with code ' + $LASTEXITCODE) }
-  $installed = $true
-  Ok 'pnpm add finished'
+  $relative = Get-RelativePath $profRoot $pluginFull
+  $insideProfile = $false
+  if (-not [string]::IsNullOrWhiteSpace($relative)) {
+    $insideProfile = -not $relative.StartsWith('..')
+  }
+  if ($ForceVendorCopy) {
+    $insideProfile = $false
+    Log '  [warn] -ForceVendorCopy: using the vendor copy unconditionally'
+  }
+
+  $nodeModulesEntry = Join-Path $prof ('node_modules\' + $pkgName)
+  $profileManifestPath = Join-Path $prof 'package.json'
+  $profileManifest = Read-Json $profileManifestPath
+
+  function Get-BundleList($Manifest) {
+    $list = $Manifest.dsh.profile.bundles
+    if ($null -eq $list) { return @() }
+    return @($list)
+  }
+
+  function New-DirectoryJunction($LinkPath, $TargetPath) {
+    # New-Item -ItemType Junction is blocked in some environments; mklink /J is
+    # the same thing and goes through cmd, which is more consistently allowed.
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $LinkPath) | Out-Null
+    $output = & cmd /c mklink /J $LinkPath $TargetPath 2>&1
+    $code = $LASTEXITCODE
+    if ($code -ne 0) { return $null }
+    return ($output -join ' ')
+  }
+
+  # The manual route: register the dependency in the profile manifest and point
+  # node_modules at the plugin with a directory junction. It is what pnpm's
+  # `add` produces for a local dependency, minus the lockfile entry, and it does
+  # not depend on pnpm or on git being usable.
+  function Install-Manually($LinkTarget, $DepSpec) {
+    if ($null -eq $profileManifest.dependencies) {
+      $profileManifest | Add-Member -NotePropertyName dependencies -NotePropertyValue ([pscustomobject]@{}) -Force
+    }
+    $profileManifest.dependencies | Add-Member -NotePropertyName $pkgName -NotePropertyValue $DepSpec -Force
+
+    $bundles = Get-BundleList $profileManifest
+    if ($bundles -notcontains $pkgName) {
+      $newBundles = @($bundles) + @($pkgName)
+      if ($null -eq $profileManifest.dsh) {
+        $profileManifest | Add-Member -NotePropertyName dsh -NotePropertyValue ([pscustomobject]@{ profile = [pscustomobject]@{ bundles = $newBundles } }) -Force
+      } elseif ($null -eq $profileManifest.dsh.profile) {
+        $profileManifest.dsh | Add-Member -NotePropertyName profile -NotePropertyValue ([pscustomobject]@{ bundles = $newBundles }) -Force
+      } else {
+        $profileManifest.dsh.profile | Add-Member -NotePropertyName bundles -NotePropertyValue $newBundles -Force
+      }
+      Log ('  added ' + $pkgName + ' to dsh.profile.bundles')
+    }
+    # Write the manifest back as UTF-8 WITHOUT a BOM: Set-Content -Encoding UTF8
+    # in Windows PowerShell 5.1 prepends one, and a BOM can upset strict JSON
+    # readers.
+    $json = $profileManifest | ConvertTo-Json -Depth 32
+    [System.IO.File]::WriteAllText($profileManifestPath, $json, (New-Object System.Text.UTF8Encoding($false)))
+    Log '  updated the profile package.json'
+
+    Remove-PathQuietly $nodeModulesEntry
+    $linked = New-DirectoryJunction $nodeModulesEntry $LinkTarget
+    if ($null -eq $linked) { Die ('could not create the node_modules junction at ' + $nodeModulesEntry) }
+    Ok ('node_modules\' + $pkgName + ' -> ' + $LinkTarget)
+  }
+
+  function Invoke-PnpmAdd($Spec) {
+    # pnpm is invoked through node.exe when available (see the header).
+    if (-not [string]::IsNullOrWhiteSpace($nodeExe)) {
+      $verb = $nodeExe
+      $pnpmArgs = @($pnpm, '--dir', $prof, 'add', $Spec)
+    } else {
+      $verb = $pnpm
+      $pnpmArgs = @('--dir', $prof, 'add', $Spec)
+    }
+    Log ('  running: ' + $verb + ' ' + ($pnpmArgs -join ' '))
+    # Let pnpm write straight to the console: relaying a package manager's stdio
+    # through a PowerShell pipeline can wedge the run and hides its progress.
+    $global:LASTEXITCODE = 0
+    & $verb @pnpmArgs
+    $code = $LASTEXITCODE
+    if ($null -eq $code) { $code = 0 }
+    return $code
+  }
+
+  $pnpmExit = 1
+  # Prefer pnpm. It is the documented path and it keeps the lockfile consistent.
+  # Junction creation is blocked in restricted environments (and pnpm itself can
+  # fail there because it shells out to git), so a failure here is not fatal:
+  # the manual route below produces an equivalent local install.
+  if ($null -ne $pnpm) {
+    $pnpmSpec = 'file:./' + $(if ($insideProfile) { $relative } else { 'vendor/' + $pkgName })
+    if (-not $insideProfile) {
+      if ($ForceVendorCopy) { Log '  [warn] -ForceVendorCopy: copying the plugin into vendor' }
+      Remove-PathQuietly $vendor
+      Copy-PluginInto $vendor
+    }
+    $pnpmExit = Invoke-PnpmAdd $pnpmSpec
+  } else {
+    Log '  [note] pnpm not available; installing manually'
+  }
+
+  if ($pnpmExit -eq 0) {
+    $installed = $true
+    Ok 'pnpm add finished'
+  } else {
+    Log ('  [note] pnpm did not complete (exit ' + $pnpmExit + '); installing manually instead')
+    # Restore the manifest first: pnpm may have left it half-written.
+    $bak = Join-Path $prof ('package.json.bak-' + $stamp)
+    if (Test-Path $bak) { Copy-Item $bak $profileManifestPath -Force }
+    $profileManifest = Read-Json $profileManifestPath
+
+    if ($insideProfile) {
+      Install-Manually $pluginFull ('file:./' + $relative)
+    } else {
+      Remove-PathQuietly $vendor
+      Copy-PluginInto $vendor
+      Install-Manually $vendor ('file:./vendor/' + $pkgName)
+    }
+    $installed = $true
+  }
 
   Step '5/5  verifying'
   $manifestAfter = Read-Json (Join-Path $prof 'package.json')
@@ -222,7 +427,6 @@ try {
   Log ('    then restore package.json from package.json.bak-' + $stamp)
   Log ''
 } catch {
-  $failure = $_
   Log ''
   Log ('  FAILED: ' + $_.Exception.Message)
   if (-not $installed -and $backedUp) {
