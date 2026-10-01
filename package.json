@@ -1,6 +1,6 @@
 {
   "name": "dsh-pardofelis-widget",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "Pardofelis theme for DeepSeek Harness: a character-themed interface background + a floating launcher at the bottom-right of the conversation page that imports and plays local audio files. Files stay on your machine; nothing is uploaded and no external request is made.",
   "type": "module",
   "license": "MIT",
