@@ -1,0 +1,31 @@
+# 帕朵菲莉丝主题挂件 · 忽略清单
+#
+# 注意：bundle/ 是【要提交】的 —— 它是插件的交付物，DSH 直接加载它。
+# 不要把它当构建产物忽略掉。
+
+# 依赖
+node_modules/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# 临时与调试产物
+*.log
+*.tmp
+tmp/
+tools/.syntax/
+tools/_probe*
+
+# Python
+__pycache__/
+*.pyc
+
+# 角色原始立绘（不随仓库发布；重新生成头像时自备源图）
+photo/
+*.psd
+*.clip

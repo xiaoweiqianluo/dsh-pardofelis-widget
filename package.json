@@ -1,0 +1,45 @@
+{
+  "name": "dsh-pardofelis-widget",
+  "version": "1.0.0",
+  "description": "Pardofelis theme widget for DeepSeek Harness: a floating launcher at the bottom-right of the conversation page that imports and plays local audio files. Files stay on your machine; nothing is uploaded and no external request is made.",
+  "type": "module",
+  "license": "MIT",
+  "main": "bundle/host.js",
+  "exports": {
+    ".": "./bundle/host.js",
+    "./client": "./bundle/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "bundle",
+    "assets",
+    "tools",
+    "cordis.patch.yml",
+    "DESIGN.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [],
+      "immediately": true
+    }
+  },
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "verify": "node tools/verify.mjs"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-plugin",
+    "theme",
+    "pardofelis",
+    "music-player",
+    "local-audio"
+  ]
+}

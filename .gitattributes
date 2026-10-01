@@ -1,0 +1,17 @@
+# 统一换行符为 LF。
+#
+# 这不只是洁癖：bundle/client.js 是【构建产物】，tools/verify.mjs 会逐字节
+# 比对它与源文件重建的结果。如果 Windows 上 checkout 出 CRLF、而重建结果
+# 是 LF，校验就会无端失败。固定成 LF 之后，任何平台上产物都一致。
+* text=auto eol=lf
+
+# 二进制资源不要做任何换行转换
+*.webp binary
+*.png  binary
+*.jpg  binary
+
+# 安装脚本保持纯 ASCII、无 BOM、LF。
+# 不用 working-tree-encoding：那会给工作区文件加 BOM，而 Windows
+# PowerShell 5.1 读到带 BOM 的脚本反而会按 ANSI 解释其中的 ASCII 旁的字节；
+# 脚本本身已刻意只用 ASCII，不需要任何编码转换。
+*.ps1 text eol=lf

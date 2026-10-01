@@ -1,0 +1,9 @@
+# dsh-pardofelis-widget bundle patch
+#
+# 为静态安装（pnpm add / 应用内插件市场）挂载本插件的一行 Loader 条目。
+# 行名 `dsh-pardofelis-widget` 解析到本包的 main（bundle/host.js，Host 半边，
+# 空操作）；浏览器半边由客户端模块系统按 package.json 里的
+# `dsh.client` 声明，从 "./client" 导出（bundle/client.js）拾取。
+- insert:
+    - id: pardofelis-widget
+      name: dsh-pardofelis-widget
