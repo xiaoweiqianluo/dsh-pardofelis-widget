@@ -57,7 +57,7 @@ window.__ModuleLoader__.load({
 // ══════════════════════════════════════════════════════════════════════════
 
 const PLUGIN_ID = 'dsh-pardofelis-widget';
-const PLUGIN_VERSION = '1.2.7';
+const PLUGIN_VERSION = '1.2.8';
 
 /** localStorage 键。插件自己的偏好，与 DSH 的设置互不干扰。 */
 const LS_KEY = 'dsh-pardofelis-widget:v1';
@@ -134,7 +134,8 @@ const THEMES = {
     --pw-accent-soft: rgba(79, 90, 144, 0.14);
     --pw-glow: rgba(124, 220, 244, 0.5);
     --pw-hover: rgba(152, 132, 121, 0.1);
-    --pw-shadow: 0 10px 30px rgba(74, 58, 52, 0.18), 0 2px 8px rgba(74, 58, 52, 0.1);
+    /* 按钮与面板的投影按用户要求整体去掉了（都不再需要与背景分离的阴影）。
+     两个投影变量的原值可以从 git 历史里取回。 */
     --pw-focus: #3F6EA8;
   `,
   dark: `
@@ -148,8 +149,7 @@ const THEMES = {
     --pw-accent-soft: rgba(185, 194, 240, 0.16);
     --pw-glow: rgba(124, 220, 244, 0.42);
     --pw-hover: rgba(212, 178, 166, 0.12);
-    --pw-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.3);
-    --pw-focus: #8FD8F4;
+      --pw-focus: #8FD8F4;
   `,
 };
 
@@ -192,11 +192,10 @@ const STYLES = `
   border: 1.5px solid var(--pw-border-strong);
   border-radius: 50%;
   background: var(--pw-shell);
-  box-shadow: var(--pw-shadow);
   cursor: pointer;
   display: grid;
   place-items: center;
-  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+  transition: transform 160ms ease, border-color 160ms ease;
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
 }
@@ -251,7 +250,7 @@ const STYLES = `
 .pw-launcher:hover .pw-ear-left  { transform: rotate(-22deg) translateY(-1px); }
 .pw-launcher:hover .pw-ear-right { transform: rotate(22deg) translateY(-1px); }
 
-/* 播放中的呼吸光环 */
+/* 播放中的呼吸光环（用户澄清过：要去掉的是按钮投影，不是这一圈，所以保留） */
 .pw-launcher[data-playing="true"]::after {
   content: "";
   position: absolute;
@@ -285,7 +284,7 @@ const STYLES = `
   border: 1.5px solid var(--pw-border-strong);
   border-radius: 18px;
   background: var(--pw-shell);
-  box-shadow: var(--pw-shadow);
+  /* 面板有 1.5px 边框，去掉投影之后与内容的分界仍然在（用户要求去掉投影） */
   -webkit-backdrop-filter: blur(14px) saturate(1.15);
   backdrop-filter: blur(14px) saturate(1.15);
   animation: pw-in 180ms ease-out;
@@ -656,6 +655,30 @@ html[data-dsh-pardofelis="${THEME_ATTR_VALUE}"][data-pw-dark="on"] body {
   --dsw-alias-scrollbar-bg-l2: rgba(212, 178, 166, 0.26) !important;
   --dsw-alias-scrollbar-hover-l2: rgba(212, 178, 166, 0.44) !important;
   --dsw-specific-sidebar-fill: rgba(32, 30, 38, 0.64) !important;
+}
+
+/*
+ * 整屏子页面必须补实。
+ *
+ * DSH 把「设置 → 充值」这类整屏子页面做成 .TaJwIq_overlay：一个 fixed、覆盖
+ * 整个视口的容器，背景用的正是 --dsw-alias-bg-base —— 而 bg-base 在我们这里是
+ * 半透明的（最底层要靠它透出壁纸）。它的头部 .TaJwIq_header 自己没有背景，
+ * 返回按钮就直接画在这层半透明背景上，于是下层内容漏上来、按钮糊在中间。
+ *
+ * bg-base 不能整体改实（最底层靠它透出壁纸），所以只给这一个整屏浮层补实。
+ *
+ * 刻意【不】写成 [class*="overlay"] 这种宽匹配：DSH 里还有 .BynINW_overlayLayer
+ * （inset:0、pointer-events:none 的整屏覆盖层），一旦被涂实会把整个界面盖住。
+ * 代价是这里带了构建哈希：DSH 升级后哈希变了，这条会安静失效（不会误伤），
+ * 症状复现时按新哈希补一行即可。
+ */
+html[data-dsh-pardofelis="${THEME_ATTR_VALUE}"] [class*="TaJwIq_overlay"],
+html[data-dsh-pardofelis="${THEME_ATTR_VALUE}"] [class*="Vb49yG_onboardingOverlay"] {
+  background-color: #FFFCFA !important;
+}
+html[data-dsh-pardofelis="${THEME_ATTR_VALUE}"][data-pw-dark="on"] [class*="TaJwIq_overlay"],
+html[data-dsh-pardofelis="${THEME_ATTR_VALUE}"][data-pw-dark="on"] [class*="Vb49yG_onboardingOverlay"] {
+  background-color: #1E1C24 !important;
 }
 `;
 
@@ -1197,8 +1220,8 @@ class PardofelisWidget {
 
     // 走带
     this.listen(ui.btnPlay, 'click', () => this.togglePlay());
-    this.listen(ui.btnPrev, 'click', () => this.step(-1, true));
-    this.listen(ui.btnNext, 'click', () => this.step(1, true));
+    this.listen(ui.btnPrev, 'click', () => this.step(-1, { manual: true, autoplay: true }));
+    this.listen(ui.btnNext, 'click', () => this.step(1, { manual: true, autoplay: true }));
     this.listen(ui.btnMode, 'click', () => this.cycleMode());
 
     // 进度与音量
@@ -1263,8 +1286,8 @@ class PardofelisWidget {
         this.togglePlay();
         return;
       }
-      if (key === 'ArrowRight' && event.ctrlKey) { event.preventDefault(); this.step(1, true); return; }
-      if (key === 'ArrowLeft' && event.ctrlKey) { event.preventDefault(); this.step(-1, true); return; }
+      if (key === 'ArrowRight' && event.ctrlKey) { event.preventDefault(); this.step(1, { manual: true, autoplay: true }); return; }
+      if (key === 'ArrowLeft' && event.ctrlKey) { event.preventDefault(); this.step(-1, { manual: true, autoplay: true }); return; }
       if (key === 'ArrowRight') {
         event.preventDefault();
         this.seekBy(5);
@@ -1486,15 +1509,29 @@ class PardofelisWidget {
     else this.pause();
   }
 
-  /** 上 / 下一首。manual 为 true 表示用户主动触发（到边界时给出提示而不是静默）。 */
-  step(delta, manual) {
+  /**
+   * 上 / 下一首。
+   *
+   * @param {number} delta +1 下一首 / -1 上一首
+   * @param {{manual?: boolean, autoplay?: boolean}} [options]
+   *   manual   用户主动触发（列表为空时给出提示，而不是静默返回）
+   *   autoplay 切过去之后要不要接着播
+   *
+   * autoplay 必须【显式传】，不能从 `!audio.paused` 去推断：自动切歌恰好发生在
+   * 「这一首刚播完」那一刻，此时 paused 已经是 true——一推断就得出"不要播"，
+   * 于是自动切歌之后音乐停住（用户报过这个 bug）。
+   */
+  step(delta, options) {
+    const opts = options || {};
+    const manual = opts.manual === true;
+    const autoplay = opts.autoplay === true;
     if (this.tracks.length === 0) {
       if (manual) this.setNotice('播放列表还是空的，先导入音频吧。');
       return;
     }
     const index = this.currentIndex();
     if (index < 0) {
-      this.select(this.tracks[0].id, { load: true, autoplay: manual });
+      this.select(this.tracks[0].id, { load: true, autoplay });
       return;
     }
     let next;
@@ -1507,8 +1544,7 @@ class PardofelisWidget {
       if (next < 0) next = this.tracks.length - 1;
       if (next >= this.tracks.length) next = 0;
     }
-    const wasPlaying = !this.audio.paused;
-    this.select(this.tracks[next].id, { load: true, autoplay: wasPlaying || manual === true });
+    this.select(this.tracks[next].id, { load: true, autoplay });
   }
 
   onEnded() {
@@ -1520,7 +1556,8 @@ class PardofelisWidget {
       return;
     }
     if (this.prefs.mode === 'shuffle') {
-      this.step(1, false);
+      // 自动切歌：接着播（这里绝不能靠 paused 推断，此刻它一定是 true）
+      this.step(1, { autoplay: true });
       return;
     }
     if (index === this.tracks.length - 1) {
@@ -1529,7 +1566,7 @@ class PardofelisWidget {
       this.setNotice('顺序播放已到最后一首。');
       return;
     }
-    this.step(1, false);
+    this.step(1, { autoplay: true });
   }
 
   cycleMode() {

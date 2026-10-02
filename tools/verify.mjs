@@ -253,16 +253,28 @@ async function main() {
     check('找到主题样式表', themeMatch !== null);
     if (themeMatch !== null) {
       const theme = themeMatch[1];
-      // 规则头里带引号的属性选择器会让「按 } 切段」的简单解析断掉，
-      // 所以这里只数前缀出现次数：主题里的规则头数量应当与命名空间前缀一致。
-      // THEME_STYLES 是模板字面量，规则头里的 ${THEME_ATTR_VALUE} 也带花括号，
-      // 计数前要先把占位符抹掉，否则规则头数量会被多算一倍。
-      const flatTheme = theme.replace(/\$\{[^}]*\}/g, 'X');
-      const ruleHeads = (flatTheme.match(/\{/g) || []).length;
-      const namespacedHeads = (flatTheme.match(/html\[data-dsh-pardofelis=/g) || []).length;
+      // 规则头里带引号的属性选择器会让「按 } 切段」的简单解析断掉，所以先把
+      // ${...} 插值与注释抹掉，再【逐个选择器】验证前缀。
+      //
+      // 原来这里是「花括号个数 == 前缀个数」。那个假设在逗号分隔的选择器上不成立：
+      // `html[attr] .a, html[attr] .b { }` 有两个前缀却只有一个花括号。
+      // 改成逐个选择器检查：既容得下这种写法，又比原来更严——它保证每一个选择器
+      // 都带命名空间，而不是只保证总数对得上（总数对得上、其中某一个选择器漏了
+      // 前缀，是完全可能的）。
+      const flatTheme = theme
+        .replace(/\$\{[^}]*\}/g, 'X')
+        .replace(/\/\*[\s\S]*?\*\//g, '');
+      const ruleHeads = Array.from(flatTheme.matchAll(/(^|\})\s*([^{}@]+)\{/g))
+        .map((match) => match[2].trim())
+        .filter((head) => head.length > 0);
+      const allSelectors = ruleHeads
+        .flatMap((head) => head.split(','))
+        .map((selector) => selector.trim())
+        .filter((selector) => selector.length > 0);
+      const unscoped = allSelectors.filter((selector) => !selector.includes('html[data-dsh-pardofelis='));
       check('主题里的每条规则都以命名空间属性为前缀（卸载即可整体撤销）',
-        ruleHeads > 0 && ruleHeads === namespacedHeads,
-        `${ruleHeads} 个规则头 / ${namespacedHeads} 个带前缀`);
+        allSelectors.length > 0 && unscoped.length === 0,
+        `${allSelectors.length} 个选择器，其中 ${unscoped.length} 个没前缀：${unscoped.slice(0, 3).join(' | ')}`);
       check('主题给 html 设了底色与壁纸', /background-color:/.test(theme) && /background-image:/.test(theme));
       check('主题不碰文字色（label-*）', !/--dsw-alias-label-/.test(theme));
       check('主题不碰语义色（state-*）', !/--dsw-alias-state-/.test(theme));
@@ -295,6 +307,59 @@ async function main() {
     check('卸载时会摘除 html 上的主题属性',
       /documentElement\.removeAttribute\(HOST_ATTR\)/.test(runtime));
     check('主题在首个 effect 里注入（不依赖对话页）', /installDocumentTheme\(\);/.test(runtime));
+  }
+
+  section('整屏子页面必须补实');
+
+  {
+    const themeMatch = runtime.match(/const THEME_STYLES = `([\s\S]*?)`;/);
+    const theme = themeMatch === null ? '' : themeMatch[1];
+    // DSH 的整屏子页面（设置 → 充值 这类）是一个 fixed、覆盖整个视口的容器，
+    // 背景用 bg-base；而 bg-base 在主题里是半透明的，于是它的头部（返回按钮所在）
+    // 会把下层内容漏上来。这条守着「必须给它补实」。
+    check('整屏子页面浮层被补实（背景不透明）',
+      /html\[data-dsh-pardofelis=[^\]]*\]\s*\[class\*="TaJwIq_overlay"\][\s\S]{0,200}background-color:\s*#FFFCFA\s*!important/.test(theme));
+    check('整屏子页面浮层有暗色档', /\[data-pw-dark="on"\][^\n]*TaJwIq_overlay/.test(theme));
+
+    // 关键守卫：绝不能"简化"成宽匹配。DSH 里还有 .BynINW_overlayLayer
+    // （inset:0、pointer-events:none 的整屏覆盖层），被涂实会把整个界面盖住。
+    //
+    // 检查前必须剥掉注释：样式表里正好有一条注释在解释「为什么不能写成宽匹配」，
+    // 里面就带着那个示例写法，不剥掉会被自己的说明文字误判（这个坑踩了第三次）。
+    const themeCode = theme.replace(/\/\*[\s\S]*?\*\//g, '');
+    check('没有把 overlay 写成宽匹配（否则会盖住 .BynINW_overlayLayer）',
+      !/\[class\*="?[Oo]verlay"?\]/.test(themeCode.replace(/TaJwIq_overlay|Vb49yG_onboardingOverlay/g, '')),
+      '出现了宽匹配的 overlay 选择器');
+  }
+
+  section('播放态光环与按钮投影');
+
+  {
+    const styleMatch = runtime.match(/const STYLES = `([\s\S]*?)`;/);
+    const css = styleMatch === null ? '' : styleMatch[1];
+    // 用户澄清过：要去掉的是【按钮投影】，播放时的呼吸光环要保留。
+    // 两者都是 box-shadow / 视觉装饰，很容易在改动里被一起误删，所以都守着。
+    check('播放态保留呼吸光环（::after 那圈）', /data-playing="true"\]::after/.test(css));
+    check('光环的关键帧还在', /@keyframes pw-pulse/.test(css));
+    check('减少动态效果时光环不动画',
+      /prefers-reduced-motion[\s\S]{0,240}data-playing="true"\]::after/.test(css));
+    check('播放态标记仍然保留（状态还得表达得出来）', /data-playing/.test(runtime));
+
+    // 用户明确要求：按钮和面板的投影都去掉，播放光环保留。
+    // 三者都是 box-shadow 这一类装饰，改动时极易互相误伤（已经误删过一次光环）。
+    for (const selector of ['.pw-launcher', '.pw-panel']) {
+      const escaped = selector.replace('.', '\\.');
+      const rule = css.match(new RegExp(`${escaped} \\{([\\s\\S]*?)\\n\\}`));
+      check(`找到 ${selector} 规则`, rule !== null);
+      if (rule !== null) {
+        check(`${selector} 不带投影（用户明确要求去掉）`, !/box-shadow/.test(rule[1]),
+          rule[1].replace(/\s+/g, ' ').trim().slice(0, 70));
+      }
+    }
+    // 剥掉注释再查：说明文字里一旦出现这个名字，守卫就会把自己绊倒
+    //（主题规则、视频样式表上都踩过，这里是第四次）。
+    const runtimeCode = runtime.replace(/\/\*[\s\S]*?\*\//g, '');
+    check('没有残留的投影变量定义（已无使用者）', !/--pw-shadow/.test(runtimeCode));
   }
 
   section('面层不透明度与对比度审计一致');

@@ -277,7 +277,7 @@ async function run() {
     equal('点播放调用 audio.play()', audio.playCalls, 1);
     equal('播放后 audio 处于 playing', audio.paused, false);
     equal('播放后按钮 aria-label 变为暂停', $(env, '[aria-label="播放"], [aria-label="暂停"]').getAttribute('aria-label'), '暂停');
-    equal('按钮进入播放态（呼吸光环）', $(env, '.pw-launcher').getAttribute('data-playing'), 'true');
+    equal('按钮进入播放态（data-playing 标记）', $(env, '.pw-launcher').getAttribute('data-playing'), 'true');
 
     audio.duration = 200;
     audio.currentTime = 50;
@@ -365,6 +365,53 @@ async function run() {
     env.flush();
     equal('顺序模式播完最后一首不跳回第一首', $(env, '.pw-now-title').textContent, '猫步.wav');
     check('顺序模式播完最后一首给出提示', $(env, '.pw-note').textContent.includes('最后一首'));
+  }
+
+  // 自动切歌之后必须【接着播】——用户报的 bug：
+  // step() 原来靠 `!audio.paused` 推断要不要继续播，而自动切歌恰好发生在
+  // 「这一首刚播完」那一刻，此时 paused 已经是 true，于是推断成"不要播"，
+  // 下一首被加载却停在那里。这条路径从根上就不能靠 paused 推断，
+  // 所以 autoplay 改成显式传参；这个测试守着它。
+  {
+    const audio = currentAudio(env);
+    $$(env, '.pw-item')[0].dispatch('click');
+    await tick();
+    env.flush();
+    equal('准备：切回第一首', $(env, '.pw-now-title').textContent, '夜航.mp3');
+    const before = audio.playCalls;
+    audio.dispatch('ended');
+    await tick();
+    env.flush();
+    equal('顺序模式自动切到下一首', $(env, '.pw-now-title').textContent, '猫步.wav');
+    check('自动切歌后仍在播放（不是停住）', audio.paused === false, `paused=${audio.paused}`);
+    check('自动切歌确实重新调用了 play()', audio.playCalls > before,
+      `${before} -> ${audio.playCalls}`);
+  }
+
+  // 随机模式同样要接着播
+  {
+    $(env, '.pw-btn-mode').dispatch('click'); // sequence -> repeat-one
+    $(env, '.pw-btn-mode').dispatch('click'); // repeat-one -> shuffle
+    equal('切到随机播放', $(env, '.pw-btn-mode').getAttribute('data-mode'), 'shuffle');
+    const audio = currentAudio(env);
+    const before = audio.playCalls;
+    const currentName = $(env, '.pw-now-title').textContent;
+    audio.dispatch('ended');
+    await tick();
+    env.flush();
+    check('随机模式自动换了一首', $(env, '.pw-now-title').textContent !== currentName,
+      $(env, '.pw-now-title').textContent);
+    check('随机模式自动切歌后仍在播放', audio.paused === false && audio.playCalls > before,
+      `paused=${audio.paused}, play ${before} -> ${audio.playCalls}`);
+    // 手动上/下一首：用户点了就播（和自动切歌一样要显式带 autoplay）
+    $(env, '.pw-btn-mode').dispatch('click'); // shuffle -> sequence
+    const manualBefore = audio.playCalls;
+    const manualName = $(env, '.pw-now-title').textContent;
+    $(env, '[aria-label="下一首"]').dispatch('click');
+    await tick();
+    env.flush();
+    check('手动下一首会切歌', $(env, '.pw-now-title').textContent !== manualName);
+    check('手动下一首后继续播放', audio.paused === false && audio.playCalls > manualBefore);
   }
 
   section('移除曲目与内存释放');

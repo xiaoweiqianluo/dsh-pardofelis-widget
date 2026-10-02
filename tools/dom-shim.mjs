@@ -334,7 +334,11 @@ export function createEnvironment(options) {
       this.paused = true;
       this.dispatch('pause');
     }
-    load() { this.loadCalls += 1; }
+    // 真实浏览器里 load() 会把播放状态重置回暂停（规范如此）。
+    // 补上这一条是为了让「切歌后是否还在播」这类断言真的有分辨力——
+    // 漏掉它时，载荷新的 src 之后 paused 仍是 false，测试就抓不到
+    // 「自动切歌后其实没播」这种 bug。
+    load() { this.loadCalls += 1; this.paused = true; }
     removeAttribute(name) { if (name === 'src') this.src = ''; super.removeAttribute(name); }
     /** 让「元数据加载完成」发生，并给出时长。 */
     finishMetadata(duration) {
