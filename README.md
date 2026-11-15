@@ -234,7 +234,8 @@ dsh-pardofelis-widget/
 ├── package.json
 ├── cordis.patch.yml
 ├── DESIGN.md              # 配色推导与选择器策略
-└── LICENSE
+├── LICENSE                # 代码与文档的 MIT 授权
+└── NOTICE.md              # 角色与立绘的归属声明（不在 MIT 范围内）
 ```
 
 ### 为什么 Host 半边是空的
@@ -260,9 +261,9 @@ dsh-pardofelis-widget/
 
 ## 授权与声明
 
-代码以 **MIT** 授权，见 [`LICENSE`](./LICENSE)。
+代码以 **MIT** 授权，见 [`LICENSE`](./LICENSE)；角色与立绘的归属声明见 [`NOTICE.md`](./NOTICE.md)。
 
-角色「帕朵菲莉丝」为米哈游《崩坏3》角色，
+角色「帕朵菲莉丝」为米哈游《崩坏：星穹铁道》角色，
 本插件为**非商业同人作品**，与米哈游无关联。
 
 `assets/avatar.webp` 由角色立绘裁切而来
